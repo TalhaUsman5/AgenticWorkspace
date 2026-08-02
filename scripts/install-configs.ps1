@@ -108,8 +108,8 @@ Install-Link "$REPO\.config\opencode\opencode.json"  "$env:USERPROFILE\.config\o
 Write-Header "WezTerm"
 
 # Directory symlink (not just wezterm.lua) so the config can require() sibling
-# modules like mux-sessions.lua. ~\.config\wezterm\wezterm.lua takes precedence
-# over the legacy ~\.wezterm.lua location, which is removed if present.
+# modules. ~\.config\wezterm\wezterm.lua takes precedence over the legacy
+# ~\.wezterm.lua location, which is removed if present.
 Write-Step "~\.config\wezterm"
 Install-Link "$REPO\.config\wezterm"  "$env:USERPROFILE\.config\wezterm"
 $legacyWez = "$env:USERPROFILE\.wezterm.lua"
@@ -118,27 +118,20 @@ if (Test-Path $legacyWez) {
     Write-Ok "removed legacy ~\.wezterm.lua"
 }
 
-# Mux server logon task: keeps sessions alive across GUI restarts.
-# wezterm.lua connects to the 'main' unix domain served by this process.
-Write-Step "Scheduled task: WezTermMuxServer"
-$muxExe = "$env:ProgramFiles\WezTerm\wezterm-mux-server.exe"
-if (Test-Path $muxExe) {
-    if (Get-ScheduledTask -TaskName 'WezTermMuxServer' -ErrorAction SilentlyContinue) {
-        Write-Ok "Scheduled task 'WezTermMuxServer' already registered"
-    } else {
-        $action   = New-ScheduledTaskAction -Execute $muxExe -Argument '--daemonize' -WorkingDirectory $env:USERPROFILE
-        $trigger  = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-        $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan)
-        try {
-            Register-ScheduledTask -TaskName 'WezTermMuxServer' -Action $action -Trigger $trigger -Settings $settings -ErrorAction Stop | Out-Null
-            Write-Ok "Scheduled task 'WezTermMuxServer' registered"
-        } catch {
-            Write-Fail "Could not register scheduled task: $_"
-            Write-Fail "Re-run from an elevated prompt to register it."
-        }
+# The mux server is no longer part of this setup (wezterm.lua declares no unix
+# domain), so the old 'WezTermMuxServer' logon task is torn down on machines
+# that still carry it. Harmless once the task is gone.
+Write-Step "Scheduled task: WezTermMuxServer (removing)"
+if (Get-ScheduledTask -TaskName 'WezTermMuxServer' -ErrorAction SilentlyContinue) {
+    try {
+        Unregister-ScheduledTask -TaskName 'WezTermMuxServer' -Confirm:$false -ErrorAction Stop
+        Write-Ok "Scheduled task 'WezTermMuxServer' unregistered"
+    } catch {
+        Write-Fail "Could not unregister scheduled task: $_"
+        Write-Fail "Re-run from an elevated prompt to remove it."
     }
 } else {
-    Write-Fail "wezterm-mux-server.exe not found, skipping mux logon task"
+    Write-Ok "No 'WezTermMuxServer' task registered"
 }
 
 # ── Neovim ────────────────────────────────────────────────────────────────────

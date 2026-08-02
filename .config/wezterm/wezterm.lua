@@ -5,40 +5,17 @@ local act = wezterm.action
 local is_windows = wezterm.target_triple:find('windows') ~= nil
 local is_linux = wezterm.target_triple:find('linux') ~= nil
 
--- Mux: persistent sessions survive GUI close (named pipe on Windows, socket on Linux).
--- The GUI auto-starts wezterm-mux-server on connect if it is not running; on Windows
--- the 'WezTermMuxServer' logon task (scripts/install-configs.ps1) also starts it.
-config.unix_domains = { { name = 'main' } }
-config.default_gui_startup_args = { 'connect', 'main' }
+-- No multiplexer domain: every window is a plain local GUI process. WezTerm's
+-- own tabs and panes still work; what is gone is session persistence across a
+-- GUI close or reboot, along with the mirrored-pane resize bugs that came with
+-- it (wezterm/wezterm#2351, #6884).
 
--- Reboot persistence: the mux server snapshots its layout periodically and
--- rebuilds it on mux-startup, so sessions survive a reboot too (layout + cwd;
--- running programs restart as fresh shells). See mux-sessions.lua.
-require('mux-sessions').enable()
-
--- Launch fullscreen. 'gui-startup' only fires for plain `wezterm start`; when the GUI
--- launches via `connect` (default_gui_startup_args above) 'gui-attached' fires instead.
--- The is_full_screen guard prevents a double toggle when both events fire.
+-- Launch fullscreen. Without a mux domain the GUI always starts via plain
+-- `wezterm start`, so 'gui-startup' is the only startup event that fires
+-- ('gui-attached' fires in its place only when attaching to a domain).
 wezterm.on('gui-startup', function(cmd)
   local _, _, window = wezterm.mux.spawn_window(cmd or {})
   window:gui_window():toggle_fullscreen()
-end)
-
-wezterm.on('gui-attached', function()
-  for _, window in ipairs(wezterm.mux.all_windows()) do
-    local gui = window:gui_window()
-    if gui and not gui:get_dimensions().is_full_screen then
-      gui:toggle_fullscreen()
-    end
-  end
-  -- Workaround for an upstream mux sizing bug (wezterm/wezterm#2351, #6884):
-  -- when a resize races the attach (the fullscreen toggle above), pane sizes
-  -- and content can render stale until the window is resized again or the
-  -- config is reloaded. A one-shot reload after the toggle settles forces a
-  -- full re-layout and repaint of every mirrored pane.
-  wezterm.time.call_after(1.0, function()
-    wezterm.reload_configuration()
-  end)
 end)
 
 -- Appearance: frameless single-window, no distractions
@@ -132,9 +109,6 @@ local mux_bindings = {
   { key = '3', desc = 'Go to tab 3', action = act.ActivateTab(2) },
   { key = '4', desc = 'Go to tab 4', action = act.ActivateTab(3) },
   { key = '5', desc = 'Go to tab 5', action = act.ActivateTab(4) },
-
-  -- Mux: detach session
-  { key = 'd', desc = 'Detach session', action = act.DetachDomain 'CurrentPaneDomain' },
 
   -- Copy mode
   { key = '[', desc = 'Copy mode', action = act.ActivateCopyMode },

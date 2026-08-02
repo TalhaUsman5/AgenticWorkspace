@@ -88,7 +88,9 @@ Rules scoped to work inside the AgenticWorkspace repo itself:
 - Setup scripts must stay idempotent; safe to re-run is a requirement.
 - WezTerm reads `~/.config/wezterm/` through a directory symlink, and its file watcher misses edits made to the symlink target; after config changes, reload with Ctrl+Shift+R rather than trusting auto-reload.
 - Skill changes under `claude/skills/` are live for new Claude Code sessions with no install step; `claude/skills-inactive/` is staged and not loaded.
-- Quality gate tooling: lint is `stylua --check .` plus `Invoke-ScriptAnalyzer -Path . -Recurse -Settings .\PSScriptAnalyzerSettings.psd1`; tests are `pwsh -File scripts/test-mux-sessions.ps1`.
+- Quality gate tooling: lint is `stylua --check .` plus `Invoke-ScriptAnalyzer -Path . -Recurse -Settings .\PSScriptAnalyzerSettings.psd1`.
+- There is no automated test suite here since the mux server was removed; the only thing worth an end-to-end test was its session persistence.
+  WezTerm config changes are verified by reloading WezTerm by hand, because `wezterm.exe` is flagged RUNASADMIN and cannot be driven from a normal shell.
 - Typecheck is not applicable here (Lua and PowerShell have no standalone type checker), and dependency audit is not applicable (no package manifests); do not re-litigate these gaps.
 - Secrets scanning uses `gitleaks` (machine-level install, present on this machine via winget).
 

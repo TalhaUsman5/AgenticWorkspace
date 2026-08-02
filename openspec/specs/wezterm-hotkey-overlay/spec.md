@@ -61,7 +61,7 @@ The leader keybindings in `config.keys` and the overlay entries SHALL both be ge
 #### Scenario: Existing bindings unchanged
 
 - **WHEN** the refactored configuration is loaded
-- **THEN** every leader binding that existed before the change (splits, pane navigation, resize, zoom, close, tabs, rename, tab numbers, detach, copy mode) works with the same key and behavior as before
+- **THEN** every leader binding that existed before the change (splits, pane navigation, resize, zoom, close, tabs, rename, tab numbers, copy mode) works with the same key and behavior as before
 
 ### Requirement: Overlay entries are grouped into labeled categories
 

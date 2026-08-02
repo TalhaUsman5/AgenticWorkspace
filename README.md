@@ -89,7 +89,6 @@ Leader key: `Ctrl+Space`
 | `Leader + 1-5` | Jump to tab by number |
 | `Leader + ,` | Rename tab |
 | `Leader + [` | Enter copy mode (vi keys) |
-| `Leader + d` | Detach mux session |
 
 ## Tools
 

@@ -42,6 +42,7 @@ A run that dies before reaching `/ship` therefore cannot look finished, which is
 - `.openclaw/skills/patrol-loop/SKILL.md` - the OpenClaw-side skill describing how to spawn and supervise a Claude Code session. Deployed to `~/.openclaw/workspace/skills/` inside WSL.
 - `.openclaw/check-agents.sh` - the deterministic monitor. Deployed to `~/.openclaw/scripts/` inside WSL and run on a systemd timer.
 - `.openclaw/tests/run-check-agents-tests.sh` - regression tests for the monitor. `jq`, `gh`, and `tmux` are stubbed, so it runs on a plain Windows checkout with only Node and bash.
+- `scripts/openclaw-doctor.ps1` - read-only readiness check for the whole pipeline: distro, binaries, deployment, gateway runtime, and auth.
 
 ## Install
 
@@ -126,6 +127,25 @@ Create the account interactively with `wsl -d Ubuntu`, then re-run the
 installer with `-SkipWslInstall`.
 That prompt needs a TTY, so it cannot be completed from a non-interactive
 shell or an agent session.
+
+## Doctor
+
+Bringing this pipeline up can look like it succeeded when it hasn't: the installer prints OK for every step, and the real gap (a missing skill, a gateway bound wide open, a dead timer) only shows up once a run is attempted.
+
+```powershell
+.\scripts\openclaw-doctor.ps1
+.\scripts\openclaw-doctor.ps1 -Distro Ubuntu-22.04
+```
+
+It is read-only - no installs, no config writes, no restarts - and checks, grouped:
+
+- **Distro**: the target distro exists (and isn't a Docker/Rancher utility distro), has a real default user, and runs systemd as PID 1.
+- **Binaries**: `node` (>= 22), `npm`, `jq`, `tmux`, `gh`, `openclaw`, and `claude` are all installed inside it.
+- **Deployment**: `check-agents.sh` is deployed and executable, `patrol-loop` shows up ready in `openclaw skills list`, `~/.claude/skills` has `next`/`patrol`/`ship`, and `~/.claude/AGENTS.md` exists.
+- **Runtime**: the gateway answers `openclaw health`, is bound to loopback only (checked against live listening sockets via `ss -ltn`, not just what the config claims), the monitor timer is enabled and active, and lingering is on.
+- **Auth**: `gh` and `claude` are both logged in.
+
+Exits `0` when everything passes, `1` when anything fails, and names the remedy for each failure (usually a specific `bootstrap\openclaw-wsl.ps1` step or a manual command to run inside WSL).
 
 ## Security posture
 

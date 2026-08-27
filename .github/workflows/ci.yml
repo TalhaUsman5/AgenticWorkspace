@@ -1,0 +1,71 @@
+name: quality gate
+
+# Runs the stages of /patrol that a Linux runner can reproduce. This exists so
+# check-agents.sh has something to read: without a check run, `gh pr checks`
+# errors, ciPassed can never become true, and every unattended run stalls at
+# "running" forever.
+on:
+  pull_request:
+  push:
+    branches: [develop, master]
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: monitor tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # jq, gh and tmux are stubbed by the suite, so only bash + node + git
+      # are actually needed here.
+      - name: run check-agents regression tests
+        run: bash .openclaw/tests/run-check-agents-tests.sh
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force
+          $results = Invoke-ScriptAnalyzer -Path . -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
+          if ($results) {
+            $results | Format-Table -AutoSize | Out-String -Width 200 | Write-Host
+            Write-Host "::error::PSScriptAnalyzer found $($results.Count) issue(s)"
+            exit 1
+          }
+          Write-Host "PSScriptAnalyzer: no findings"
+
+      # Pinned release download rather than a third-party action, to keep the
+      # supply-chain surface of this workflow to GitHub-owned actions only.
+      - name: stylua --check
+        run: |
+          set -euo pipefail
+          VERSION=2.5.2
+          curl -fsSL -o stylua.zip \
+            "https://github.com/JohnnyMorganz/StyLua/releases/download/v${VERSION}/stylua-linux-x86_64.zip"
+          unzip -q stylua.zip
+          chmod +x stylua
+          ./stylua --check .
+
+  shell:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck the monitor and its tests
+        run: |
+          set -euo pipefail
+          shellcheck --version
+          shellcheck .openclaw/check-agents.sh .openclaw/tests/run-check-agents-tests.sh

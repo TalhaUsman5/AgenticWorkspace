@@ -63,8 +63,7 @@ if command -v pacman &>/dev/null; then
   # AUR extras (requires yay)
   if command -v yay &>/dev/null; then
     yay -S --needed --noconfirm \
-      iosevka-term-nerd-font \
-      opencode-bin
+      iosevka-term-nerd-font
   fi
 
 elif command -v apt &>/dev/null; then

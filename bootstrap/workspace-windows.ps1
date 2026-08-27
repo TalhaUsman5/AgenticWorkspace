@@ -12,7 +12,6 @@
       - Claude for Desktop
       - Agentic Project Tracker  (latest GitHub release)
       - Claude CLI  (@anthropic-ai/claude-code)
-      - OpenCode CLI  (opencode-ai)
       - OpenSpec CLI  (@fission-ai/openspec)
       - GitHub Copilot CLI  (gh extension)
 
@@ -250,13 +249,12 @@ if (Get-Command npm -ErrorAction SilentlyContinue) {
     Write-Warn "  npm install -g @anthropic-ai/claude-code"
 }
 
-# ── OpenCode + OpenSpec CLIs ──────────────────────────────────────────────────
+# ── OpenSpec CLI ──────────────────────────────────────────────────────────────
 
-Write-Header "OpenCode + OpenSpec CLIs"
+Write-Header "OpenSpec CLI"
 
 if (Get-Command npm -ErrorAction SilentlyContinue) {
     $npmClis = @(
-        @{ Pkg = 'opencode-ai';           Name = 'OpenCode CLI'; Cmd = 'opencode' },
         @{ Pkg = '@fission-ai/openspec';  Name = 'OpenSpec CLI'; Cmd = 'openspec' }
     )
 
@@ -271,7 +269,6 @@ if (Get-Command npm -ErrorAction SilentlyContinue) {
     }
 } else {
     Write-Warn "npm not on PATH. Restart your terminal after Node.js install, then run:"
-    Write-Warn "  npm install -g opencode-ai"
     Write-Warn "  npm install -g @fission-ai/openspec"
 }
 
@@ -319,7 +316,6 @@ $checks = @(
     @{ Cmd = 'node';    Label = 'Node.js' },
     @{ Cmd = 'npm';     Label = 'npm' },
     @{ Cmd = 'claude';   Label = 'Claude CLI' },
-    @{ Cmd = 'opencode'; Label = 'OpenCode CLI' },
     @{ Cmd = 'openspec'; Label = 'OpenSpec CLI' },
     @{ Cmd = 'code';     Label = 'VS Code' }
 )

@@ -80,7 +80,7 @@ foreach ($pkg in $packages) {
 
 Write-Host ""
 Write-Host "Installing agent CLIs via npm..."
-foreach ($cli in @('@anthropic-ai/claude-code', 'opencode-ai', '@fission-ai/openspec')) {
+foreach ($cli in @('@anthropic-ai/claude-code', '@fission-ai/openspec')) {
     Write-Host "  Installing $cli..."
     npm install -g $cli
     if (-not $?) { Write-Warning "  $cli install failed - continuing." }

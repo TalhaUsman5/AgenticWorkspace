@@ -26,13 +26,11 @@ tmux split-window -t "$SESSION:1" -h -p 40 -c "$DIR"
 # Right pane: open neovim
 tmux send-keys -t "$SESSION:1.2" 'nvim .' Enter
 
-# Left pane: open Claude Code (or OpenCode as fallback)
+# Left pane: open Claude Code
 if command -v claude &>/dev/null; then
   tmux send-keys -t "$SESSION:1.1" 'claude' Enter
-elif command -v opencode &>/dev/null; then
-  tmux send-keys -t "$SESSION:1.1" 'opencode' Enter
 else
-  echo "Warning: neither 'claude' nor 'opencode' found on PATH"
+  echo "Warning: 'claude' not found on PATH"
 fi
 
 # Focus agent pane

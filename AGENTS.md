@@ -38,6 +38,8 @@ Non-negotiable in every project:
   Work on a `develop` branch, or a branch cut from `develop`, and let `/release` promote `develop` into `master`/`main` when a release is cut.
   A repo's own instructions (e.g. its README, CONTRIBUTING.md, or a scoped section in this file) can override this for repos that intentionally commit straight to `master`/`main`.
 - Do not commit or push unless asked, and never force-push.
+  Carve-out for the autonomous loop: when `/next` has claimed a queue item, the commits and pushes that `/next` and `/ship` make for that item count as asked-for, and do not need a fresh confirmation.
+  The carve-out covers only the claimed item's own branch; it never authorises pushing to `master`/`main` or force-pushing anything.
 - When a task is ambiguous, state your interpretation and proceed on the reversible parts; ask only when the answer genuinely changes what you build.
 - Report honestly: if a check failed, was skipped, or was not run, say so plainly.
   Never describe unverified work as done.
@@ -68,6 +70,30 @@ Delivery has three shapes: /commit for direct-push repos, /release to promote de
 If the project has a POLICE.md, its rules are law for every changeset; never water them down or grant exceptions.
 Repos without their own POLICE.md fall back to the global rules symlinked at `~/.claude/POLICE.md`; a repo file replaces the fallback entirely, so it must carry over any global rules that still apply.
 
+## Unattended operation
+
+Unattended runs are driven externally by OpenClaw, not by looping `/patrol` inside a single Claude Code session.
+OpenClaw spawns each task into its own git worktree plus detached tmux session and invokes `/next`, which works the backlog item through `/patrol` and `/ship` on its own.
+
+A run is only considered ready for merge once every check in its state file (`~/.openclaw/state/<task-id>.json`, maintained by `check-agents.sh`) is true:
+
+```json
+{
+  "checks": {
+    "prCreated": true,
+    "ciPassed": true,
+    "claudeReviewPassed": true,
+    "uiScreenshotsIncluded": true
+  }
+}
+```
+
+`prCreated` and `ciPassed` are filled in automatically via `gh`.
+`claudeReviewPassed` and `uiScreenshotsIncluded` are the agent's own responsibility - `/ship` should not exit successfully without setting them (see `claude/skills/ship/`).
+
+A stuck session is restarted up to 3 times before `check-agents.sh` gives up and surfaces it to a human.
+Do not build additional self-restart logic into `/next` or `/patrol` - retry policy lives in the deterministic monitor, not in the model loop.
+
 ## Definition of done
 
 Work is finished only when all of these hold:
@@ -84,15 +110,18 @@ Rules scoped to work inside the AgenticWorkspace repo itself:
 
 - This is a dotfiles and agent-instructions repo; configs here are symlinked live into system paths, so edits take effect on the real machine immediately.
 - Windows is the primary platform and scripts are PowerShell 7; Linux/Omarchy support is secondary.
-- Commit directly to master here; this repo does not use pull requests.
+- Work on a branch cut from `develop`, and deliver it as a pull request into `develop`; `develop` is promoted into `master` when a release is cut.
+  This repo follows the global branching rule rather than overriding it.
 - Setup scripts must stay idempotent; safe to re-run is a requirement.
 - WezTerm reads `~/.config/wezterm/` through a directory symlink, and its file watcher misses edits made to the symlink target; after config changes, reload with Ctrl+Shift+R rather than trusting auto-reload.
 - Skill changes under `claude/skills/` are live for new Claude Code sessions with no install step; `claude/skills-inactive/` is staged and not loaded.
+- `.openclaw/` is deployed into WSL by `bootstrap/openclaw-wsl.ps1`, not symlinked, so edits there do not take effect until that script is re-run.
 - Quality gate tooling: lint is `stylua --check .` plus `Invoke-ScriptAnalyzer -Path . -Recurse -Settings .\PSScriptAnalyzerSettings.psd1`.
-- There is no automated test suite here since the mux server was removed; the only thing worth an end-to-end test was its session persistence.
+- Tests: `bash .openclaw/tests/run-check-agents-tests.sh` covers the unattended-run monitor, which is the one component here that runs with nobody reading its output. It stubs `jq`, `gh`, and `tmux`, so it needs only bash and Node. Nothing else in the repo has an automated test; the dotfiles are verified by using them.
   WezTerm config changes are verified by reloading WezTerm by hand, because `wezterm.exe` is flagged RUNASADMIN and cannot be driven from a normal shell.
 - Typecheck is not applicable here (Lua and PowerShell have no standalone type checker), and dependency audit is not applicable (no package manifests); do not re-litigate these gaps.
-- Secrets scanning uses `gitleaks` (machine-level install, present on this machine via winget).
+- Secrets scanning uses `gitleaks`, and lint needs `stylua` plus the `PSScriptAnalyzer` module; all three are installed by `bootstrap/workspace-windows.ps1`.
+  If a gate stage reports the tool missing, run that script rather than skipping the stage.
 
 ## Branden's Opinions
 

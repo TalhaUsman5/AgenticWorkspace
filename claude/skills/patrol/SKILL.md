@@ -1,6 +1,6 @@
 ---
 name: patrol
-description: Run the full quality gate (typecheck, lint, police, tests) and fix failures until everything passes. Use at the end of any coding task, before committing, or on a loop for unattended operation.
+description: Run the full quality gate (typecheck, lint, police, tests) and fix failures until everything passes. Use at the end of any coding task, before committing, or as the gate stage of an unattended run.
 ---
 
 # Patrol
@@ -42,5 +42,5 @@ On failure, include the exact failing output so the next agent or human can pick
 Patrol is idempotent and safe to re-run, which makes it the building block for asynchronous agent loops:
 
 - Agents should run /patrol after completing any coding task, before committing or reporting done.
-- For continuous operation, drive it with the harness's looping facility (for example `/loop /patrol`), or schedule it against a branch that other agents are pushing to.
+- For continuous operation, do not loop patrol inside one session. Unattended runs are spawned and supervised from outside by OpenClaw, which invokes `/next` per task; patrol is one stage inside that run, not the loop itself.
 - When patrol fails in a loop, the fix belongs in the same iteration; never leave the gate red for the next cycle to discover.

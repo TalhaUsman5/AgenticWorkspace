@@ -61,7 +61,8 @@ function Install-Link {
 
 Write-Header "Claude"
 
-# AGENTS.md is the single source of truth; both Claude Code and OpenCode read it
+# AGENTS.md is the single source of truth; Claude Code reads it, and OpenClaw
+# passes it into the headless sessions it spawns
 Write-Step "~\.claude\AGENTS.md"
 Install-Link "$REPO\AGENTS.md"  "$env:USERPROFILE\.claude\AGENTS.md"
 Write-Step "~\.claude\CLAUDE.md  (-> AGENTS.md)"
@@ -96,12 +97,6 @@ Write-Step "~\OPINIONS.md"
 Install-Link "$REPO\OPINIONS.md"  "$env:USERPROFILE\OPINIONS.md"
 Write-Step "~\VOICE.md"
 Install-Link "$REPO\VOICE.md"  "$env:USERPROFILE\VOICE.md"
-
-# ── OpenCode ──────────────────────────────────────────────────────────────────
-
-Write-Header "OpenCode"
-Write-Step "~\.config\opencode\opencode.json"
-Install-Link "$REPO\.config\opencode\opencode.json"  "$env:USERPROFILE\.config\opencode\opencode.json"
 
 # ── WezTerm ───────────────────────────────────────────────────────────────────
 

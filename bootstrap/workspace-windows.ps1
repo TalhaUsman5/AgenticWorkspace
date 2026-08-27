@@ -12,8 +12,8 @@
       - Claude for Desktop
       - Agentic Project Tracker  (latest GitHub release)
       - Claude CLI  (@anthropic-ai/claude-code)
-      - OpenCode CLI  (opencode-ai)
       - OpenSpec CLI  (@fission-ai/openspec)
+      - Quality gate tooling  (StyLua, gitleaks, PSScriptAnalyzer)
       - GitHub Copilot CLI  (gh extension)
 
     Safe to re-run - already-installed packages are skipped.
@@ -135,6 +135,41 @@ Install-Winget -Id 'Neovim.Neovim'            -Name 'Neovim'
 
 Update-Path
 
+# ── Quality gate tooling ──────────────────────────────────────────────────────
+
+# AGENTS.md defines the gate as `stylua --check .` plus Invoke-ScriptAnalyzer,
+# with gitleaks for the secrets scan. Without these, /patrol reports three
+# stages SKIPPED on a fresh machine.
+
+Write-Header "Quality gate tooling"
+
+Install-Winget -Id 'JohnnyMorganz.StyLua'     -Name 'StyLua  (Lua formatter)'
+Install-Winget -Id 'Gitleaks.Gitleaks'        -Name 'gitleaks  (secrets scanner)'
+
+# PSScriptAnalyzer is a PowerShell module, not a winget package. It must land
+# in PowerShell 7's module path, since every script in this repo requires v7.
+Write-Step "Installing PSScriptAnalyzer (PowerShell module)..."
+$psaInstalled = $false
+if (Get-Command pwsh -ErrorAction SilentlyContinue) {
+    $psaCheck = pwsh -NoProfile -Command 'if (Get-Module -ListAvailable PSScriptAnalyzer) { "yes" } else { "no" }' 2>$null
+    if ($psaCheck -match 'yes') {
+        Write-Ok "PSScriptAnalyzer already installed - skipping"
+        $psaInstalled = $true
+    } else {
+        pwsh -NoProfile -Command 'Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force -AllowClobber' 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Ok "PSScriptAnalyzer installed"
+            $psaInstalled = $true
+        }
+    }
+}
+if (-not $psaInstalled) {
+    Write-Warn "PSScriptAnalyzer not installed. Restart your terminal so pwsh is on PATH, then run:"
+    Write-Warn "  pwsh -Command 'Install-Module PSScriptAnalyzer -Scope CurrentUser -Force'"
+}
+
+Update-Path
+
 # ── Visual Studio Code ────────────────────────────────────────────────────────
 
 if (-not $SkipVSCode) {
@@ -250,13 +285,12 @@ if (Get-Command npm -ErrorAction SilentlyContinue) {
     Write-Warn "  npm install -g @anthropic-ai/claude-code"
 }
 
-# ── OpenCode + OpenSpec CLIs ──────────────────────────────────────────────────
+# ── OpenSpec CLI ──────────────────────────────────────────────────────────────
 
-Write-Header "OpenCode + OpenSpec CLIs"
+Write-Header "OpenSpec CLI"
 
 if (Get-Command npm -ErrorAction SilentlyContinue) {
     $npmClis = @(
-        @{ Pkg = 'opencode-ai';           Name = 'OpenCode CLI'; Cmd = 'opencode' },
         @{ Pkg = '@fission-ai/openspec';  Name = 'OpenSpec CLI'; Cmd = 'openspec' }
     )
 
@@ -271,7 +305,6 @@ if (Get-Command npm -ErrorAction SilentlyContinue) {
     }
 } else {
     Write-Warn "npm not on PATH. Restart your terminal after Node.js install, then run:"
-    Write-Warn "  npm install -g opencode-ai"
     Write-Warn "  npm install -g @fission-ai/openspec"
 }
 
@@ -319,9 +352,10 @@ $checks = @(
     @{ Cmd = 'node';    Label = 'Node.js' },
     @{ Cmd = 'npm';     Label = 'npm' },
     @{ Cmd = 'claude';   Label = 'Claude CLI' },
-    @{ Cmd = 'opencode'; Label = 'OpenCode CLI' },
     @{ Cmd = 'openspec'; Label = 'OpenSpec CLI' },
-    @{ Cmd = 'code';     Label = 'VS Code' }
+    @{ Cmd = 'code';     Label = 'VS Code' },
+    @{ Cmd = 'stylua';   Label = 'StyLua' },
+    @{ Cmd = 'gitleaks'; Label = 'gitleaks' }
 )
 
 Update-Path

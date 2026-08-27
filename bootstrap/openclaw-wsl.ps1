@@ -9,9 +9,10 @@
     Idempotent. Installs, in order:
       - WSL2 with an Ubuntu distro (reboot required on first run)
       - systemd enabled inside that distro
-      - Node.js 22+ and the openclaw CLI
+      - Node.js 22+, the openclaw CLI, and Claude Code
       - jq / tmux / gh, which check-agents.sh needs
       - this repo's .openclaw/ skills and monitor script
+      - a systemd user timer that runs the monitor every 2 minutes
 
     Stops short of `openclaw onboard`, which needs live input.
 
@@ -194,6 +195,12 @@ if ! command -v gh >/dev/null 2>&1; then
 fi
 
 sudo npm install -g openclaw@latest
+
+# Claude Code has to exist inside the distro, not just on Windows: both
+# patrol-loop.md and check-agents.sh spawn `claude` into a Linux tmux session,
+# and a Windows install is not reachable as a Linux binary.
+sudo npm install -g @anthropic-ai/claude-code
+
 mkdir -p ~/.openclaw/workspace/skills ~/.openclaw/scripts ~/.openclaw/state
 '@
 wsl @wslExec -e bash -c $installScript

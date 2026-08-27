@@ -221,7 +221,12 @@ $wslRepo  = Convert-ToWslPath $repoRoot
 $copyScript = @"
 set -euo pipefail
 mkdir -p ~/.openclaw/workspace/skills ~/.openclaw/scripts ~/.openclaw/state
-cp '$wslRepo/.openclaw/skills/patrol-loop.md' ~/.openclaw/workspace/skills/patrol-loop.md
+# OpenClaw discovers a skill as a DIRECTORY containing SKILL.md with YAML
+# frontmatter. A bare .md file here is silently ignored - it deploys fine and
+# never shows up in `openclaw skills list`.
+rm -f ~/.openclaw/workspace/skills/patrol-loop.md
+mkdir -p ~/.openclaw/workspace/skills/patrol-loop
+cp '$wslRepo/.openclaw/skills/patrol-loop/SKILL.md' ~/.openclaw/workspace/skills/patrol-loop/SKILL.md
 cp '$wslRepo/.openclaw/check-agents.sh' ~/.openclaw/scripts/check-agents.sh
 # Windows checkouts can carry CRLF; a CR in the shebang breaks execution.
 sed -i 's/\r$//' ~/.openclaw/scripts/check-agents.sh

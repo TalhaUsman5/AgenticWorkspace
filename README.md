@@ -21,14 +21,14 @@ Claude Code is the primary AI agent harness.
 │   │   ├── audit/                  # Dependency CVE scan + secrets scan on the changeset
 │   │   ├── police/                 # Enforce POLICE.md behaviour rules against a changeset
 │   │   ├── patrol/                 # Full quality gate: typecheck + lint + audit + police + tests
-│   │   └── ship/                   # Standardized delivery: gate, review, commit, push, PR
+│   │   ├── ship/                   # Standardized delivery: gate, review, commit, push, PR
 │   │   └── next/                   # Autonomous-loop work intake (next -> work -> patrol -> ship)
 │   └── skills-inactive/            # Staged skills, not loaded until moved into skills/
 ├── .config/
 │   ├── wezterm/wezterm.lua         # Terminal: tabs/panes, Catppuccin Mocha, fullscreen
 │   └── nvim/                       # Neovim: lazy.nvim, oil.nvim, neogit, snacks.nvim, LSP
 ├── .openclaw/
-│   ├── skills/patrol-loop.md       # OpenClaw skill: spawn + supervise a Claude Code run
+│   ├── skills/patrol-loop/SKILL.md # OpenClaw skill: spawn + supervise a Claude Code run
 │   ├── check-agents.sh             # Deterministic monitor, run on a systemd timer in WSL
 │   └── tests/run-check-agents-tests.sh  # Regression tests for the monitor
 ├── docs/

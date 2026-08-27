@@ -1,3 +1,9 @@
+---
+name: patrol-loop
+description: "Spawn and supervise an unattended Claude Code run on a project: create a git worktree, start a detached tmux session against /next, and hand monitoring to check-agents.sh. Use when asked to work a backlog item or keep working the backlog on a named project."
+metadata: { "openclaw": { "emoji": "🚨" } }
+---
+
 # patrol-loop
 
 Trigger: a message naming a project directory and a task (or "keep working
@@ -9,6 +15,11 @@ the backlog on <project>").
    Resolve it to an absolute path now; every path written below must be
    absolute, because the monitor runs from a systemd timer with an
    unrelated working directory and cannot resolve `../` against yours.
+
+   If the path is under `/mnt/`, say so before starting. Windows drives
+   mounted into WSL are slow enough to matter for a full build-and-test
+   loop, and their permission model does not carry the executable bit or
+   Unix ownership the way git expects. Prefer a clone under `$HOME`.
 2. Create an isolated worktree so the new work can't break the main tree:
    ```
    git -C <project> worktree add <project>-<task-id> -b agent/<task-id>

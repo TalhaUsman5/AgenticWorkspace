@@ -39,7 +39,7 @@ A run that dies before reaching `/ship` therefore cannot look finished, which is
 ## Files
 
 - `bootstrap/openclaw-wsl.ps1` - installs WSL2 + Ubuntu, enables systemd, installs Node 22+, `jq`, `tmux`, `gh`, and OpenClaw inside it, then deploys the two files below.
-- `.openclaw/skills/patrol-loop.md` - the OpenClaw-side skill describing how to spawn and supervise a Claude Code session. Deployed to `~/.openclaw/workspace/skills/` inside WSL.
+- `.openclaw/skills/patrol-loop/SKILL.md` - the OpenClaw-side skill describing how to spawn and supervise a Claude Code session. Deployed to `~/.openclaw/workspace/skills/` inside WSL.
 - `.openclaw/check-agents.sh` - the deterministic monitor. Deployed to `~/.openclaw/scripts/` inside WSL and run on a systemd timer.
 - `.openclaw/tests/run-check-agents-tests.sh` - regression tests for the monitor. `jq`, `gh`, and `tmux` are stubbed, so it runs on a plain Windows checkout with only Node and bash.
 

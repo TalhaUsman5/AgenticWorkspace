@@ -49,7 +49,7 @@ function Write-Warn2($msg){ Write-Host "  !   $msg" -ForegroundColor Yellow }
 
 # `wsl -l -q` emits UTF-16LE padded with NULs; strip them before comparing,
 # or every name comes back looking like "U b u n t u".
-function Get-WslDistros {
+function Get-WslDistro {
     $raw = (wsl -l -q 2>$null) -join "`n"
     if (-not $raw) { return @() }
     return ($raw -replace "`0", '') -split "`r?`n" |
@@ -71,7 +71,7 @@ function Convert-ToWslPath([string]$winPath) {
 
 # 1. WSL2 + Ubuntu --------------------------------------------------------
 if (-not $SkipWslInstall) {
-    $distros = Get-WslDistros
+    $distros = Get-WslDistro
     $usable  = $distros | Where-Object { $systemDistros -notcontains $_ }
 
     if ($distros -contains $Distro) {
@@ -102,7 +102,7 @@ if (-not $SkipWslInstall) {
 # docker-desktop.
 $wslExec = @('-d', $Distro)
 
-$present = Get-WslDistros
+$present = Get-WslDistro
 if ($present -notcontains $Distro) {
     Write-Host "Distro '$Distro' is not installed. Run without -SkipWslInstall first." -ForegroundColor Red
     exit 1

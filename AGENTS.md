@@ -120,7 +120,8 @@ Rules scoped to work inside the AgenticWorkspace repo itself:
 - Tests: `bash .openclaw/tests/run-check-agents-tests.sh` covers the unattended-run monitor, which is the one component here that runs with nobody reading its output. It stubs `jq`, `gh`, and `tmux`, so it needs only bash and Node. Nothing else in the repo has an automated test; the dotfiles are verified by using them.
   WezTerm config changes are verified by reloading WezTerm by hand, because `wezterm.exe` is flagged RUNASADMIN and cannot be driven from a normal shell.
 - Typecheck is not applicable here (Lua and PowerShell have no standalone type checker), and dependency audit is not applicable (no package manifests); do not re-litigate these gaps.
-- Secrets scanning uses `gitleaks` (machine-level install, present on this machine via winget).
+- Secrets scanning uses `gitleaks`, and lint needs `stylua` plus the `PSScriptAnalyzer` module; all three are installed by `bootstrap/workspace-windows.ps1`.
+  If a gate stage reports the tool missing, run that script rather than skipping the stage.
 
 ## Branden's Opinions
 

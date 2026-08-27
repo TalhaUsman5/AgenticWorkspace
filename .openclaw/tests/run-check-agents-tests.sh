@@ -122,6 +122,55 @@ TMUX_ALIVE=0 bash "$SCRIPT" >/dev/null 2>&1
 is "status is failed" "$(field "$STATE/t1.json" status)" "failed"
 is "attempts not incremented past the cap" "$(field "$STATE/t1.json" attempts)" "3"
 
+# --- a live session whose agent process has exited is treated as dead -------------
+# The bug this suite is guarding against: `has-session` alone reports a
+# session as healthy even after `claude` inside it has crashed and dropped
+# back to a shell prompt. `pane_current_command` must be what breaks the tie.
+echo
+echo "a session whose agent process exited is restarted, not left running forever"
+reset_state
+write_state t1 running 0 false false false false "$WT"
+TMUX_ALIVE=1 TMUX_PANE_COMMAND=bash bash "$SCRIPT" >/dev/null 2>&1
+is "exits clean" "$?" "0"
+is "attempts incremented" "$(field "$STATE/t1.json" attempts)" "1"
+is "status still running (not yet at the cap)" "$(field "$STATE/t1.json" status)" "running"
+
+# --- a live session whose agent is genuinely still working is left alone ----------
+# The important half per the issue: false positives here would kill in-flight
+# work, so a pane still running "claude" must never be restarted.
+echo
+echo "a session whose agent is genuinely still working is not touched"
+reset_state
+write_state t1 running 0 false false false false "$WT"
+TMUX_ALIVE=1 TMUX_PANE_COMMAND=claude bash "$SCRIPT" >/dev/null 2>&1
+is "attempts untouched" "$(field "$STATE/t1.json" attempts)" "0"
+is "status still running" "$(field "$STATE/t1.json" status)" "running"
+
+# --- a dead agent at the attempt cap fails instead of retrying, even with the ------
+# --- session still alive -----------------------------------------------------------
+echo
+echo "a dead agent at the attempt cap fails even though the session is still up"
+reset_state
+write_state t1 running 3 false false false false "$WT"
+NOTIFYLOG="$WORK/openclaw.log"; : > "$NOTIFYLOG"
+TMUX_ALIVE=1 TMUX_PANE_COMMAND=bash OPENCLAW_LOG="$NOTIFYLOG" bash "$SCRIPT" >/dev/null 2>&1
+is "status is failed" "$(field "$STATE/t1.json" status)" "failed"
+is "attempts not incremented past the cap" "$(field "$STATE/t1.json" attempts)" "3"
+is "gateway was notified once" "$(grep -c -- '---' "$NOTIFYLOG" || true)" "1"
+
+# --- restarting over a stale-but-present session kills it first ------------------
+# A session sitting at a shell prompt still holds its name, so `new-session`
+# would otherwise fail with "duplicate session" and the restart would be lost.
+echo
+echo "restarting a dead-agent-but-alive session kills the stale session first"
+reset_state
+write_state t1 running 0 false false false false "$WT"
+TMUX_CMD_LOG="$WORK/tmux.log"; : > "$TMUX_CMD_LOG"
+TMUX_ALIVE=1 TMUX_PANE_COMMAND=bash TMUX_CMD_LOG="$TMUX_CMD_LOG" bash "$SCRIPT" >/dev/null 2>&1
+is "kill-session ran before new-session" \
+   "$(awk '/^kill-session/{k=NR} /^new-session/{n=NR} END{print (k && n && k<n) ? "yes" : "no"}' "$TMUX_CMD_LOG")" \
+   "yes"
+
 # --- terminal states are left alone --------------------------------------------
 echo
 echo "terminal states are not touched"

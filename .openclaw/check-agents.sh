@@ -97,6 +97,25 @@ for state_file in "$STATE_DIR"/*.json; do
     session_alive=true
   fi
 
+  # `has-session` only proves the tmux session survives, not that the agent
+  # inside it is still working. When `claude` exits - crash, session limit,
+  # OOM - the session drops back to a shell prompt and sits there forever;
+  # has-session alone would report that as healthy indefinitely.
+  # `pane_current_command` is a process attribute tmux tracks for the pane's
+  # foreground job, not rendered screen content, so this stays clear of
+  # scraping pane text for a prompt or error string (locale-dependent and
+  # brittle). It reads "claude" while the agent runs and falls back to the
+  # login shell's name (bash, zsh, sh) the moment that process exits.
+  # Timeboxed like the gateway notification below: a wedged tmux server must
+  # not be able to hang the sweep.
+  agent_alive=false
+  if [ "$session_alive" = "true" ]; then
+    pane_cmd=$(with_timeout 5 tmux list-panes -t "$session" -F '#{pane_current_command}' 2>/dev/null | head -n1 || true)
+    if [ "$pane_cmd" = "claude" ]; then
+      agent_alive=true
+    fi
+  fi
+
   # Cache the pane's tail while the session is still alive. Once tmux tears
   # a session down (the normal way a run "dies" here), capture-pane has
   # nothing left to read - so the only way a failure notification can carry
@@ -171,14 +190,22 @@ for state_file in "$STATE_DIR"/*.json; do
     continue
   fi
 
-  if [ "$session_alive" = "false" ]; then
+  if [ "$agent_alive" = "false" ]; then
     if [ "$attempts" -ge "$MAX_ATTEMPTS" ]; then
       notify_failed "$task_id" "$attempts" "$state_file" ""
       tmp=$(mktemp)
       jq '.status = "failed" | .reported = true' "$state_file" > "$tmp" && mv "$tmp" "$state_file"
       echo "[$task_id] failed after $MAX_ATTEMPTS attempts - needs a human"
     else
-      echo "[$task_id] session died, restarting (attempt $((attempts + 1)))"
+      if [ "$session_alive" = "true" ]; then
+        echo "[$task_id] agent process gone but session survived, restarting (attempt $((attempts + 1)))"
+        # A stale session sitting at a shell prompt still holds the name, so
+        # has-session would otherwise refuse `new-session` with "duplicate
+        # session". Tear it down first; the agent inside it is already gone.
+        tmux kill-session -t "$session" 2>/dev/null || true
+      else
+        echo "[$task_id] session died, restarting (attempt $((attempts + 1)))"
+      fi
       tmux new-session -d -s "$session" -c "$worktree"
       # OPENCLAW_TASK_ID goes on the command line, not through `tmux setenv`:
       # setenv only reaches panes created afterwards, so a shell that already

@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 # tmux stub.
-#   TMUX_ALIVE=1     `has-session` succeeds
-#   TMUX_CMD_LOG     if set, every invocation is appended to this file, so a test
-#                    can assert what the monitor sent to the session
-#   TMUX_PANE_OUTPUT if set, `capture-pane` prints this text (only while
-#                    TMUX_ALIVE=1 - a dead session has nothing to capture)
+#   TMUX_ALIVE=1       `has-session` succeeds
+#   TMUX_CMD_LOG       if set, every invocation is appended to this file, so a
+#                      test can assert what the monitor sent to the session
+#   TMUX_PANE_OUTPUT   if set, `capture-pane` prints this text (only while
+#                      TMUX_ALIVE=1 - a dead session has nothing to capture)
+#   TMUX_PANE_COMMAND  what `list-panes -F '#{pane_current_command}'` reports
+#                      while TMUX_ALIVE=1 - defaults to "claude" so tests that
+#                      don't care about liveness detection keep seeing a live
+#                      agent. Set to "bash" (or any non-"claude" value) to
+#                      simulate the agent process having exited while the
+#                      session itself survives.
 [ -n "${TMUX_CMD_LOG:-}" ] && echo "$*" >> "$TMUX_CMD_LOG"
 case "$1" in
   has-session) [ "${TMUX_ALIVE:-0}" = "1" ] ;;
@@ -13,6 +19,11 @@ case "$1" in
       printf '%s\n' "$TMUX_PANE_OUTPUT"
     fi
     ;;
-  new-session|send-keys) echo "[tmux stub] $*" >&2 ;;
+  list-panes)
+    if [ "${TMUX_ALIVE:-0}" = "1" ]; then
+      printf '%s\n' "${TMUX_PANE_COMMAND:-claude}"
+    fi
+    ;;
+  new-session|send-keys|kill-session) echo "[tmux stub] $*" >&2 ;;
   *) exit 0 ;;
 esac

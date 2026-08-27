@@ -27,7 +27,21 @@ Every agent shipping through this skill produces the same shape of branch, commi
 4. **Push and open the PR** with `gh pr create`.
    Use the repo's PR template if `.github/PULL_REQUEST_TEMPLATE.md` exists.
    The body must cover: what changed and why, the patrol verdict as test evidence, review findings addressed, and `Closes #N` when the work came from an issue.
-5. **Report**: the PR URL, the final patrol verdict, and anything a human reviewer should look at first.
+5. **Record the checks you own** (only when `OPENCLAW_TASK_ID` is set in the environment, i.e. this is an unattended OpenClaw run).
+   `check-agents.sh` fills in `prCreated` and `ciPassed` from outside, but it cannot see whether the reviews in step 2 actually ran or whether UI work carries screenshots, so it trusts this skill for those two:
+
+   ```bash
+   state="$HOME/.openclaw/state/$OPENCLAW_TASK_ID.json"
+   tmp=$(mktemp)
+   jq --argjson review true --argjson shots true \
+      '.checks.claudeReviewPassed = $review | .checks.uiScreenshotsIncluded = $shots' \
+      "$state" > "$tmp" && mv "$tmp" "$state"
+   ```
+
+   Set `claudeReviewPassed` to true only if step 2's code-review and security-review both ran and their findings are addressed.
+   Set `uiScreenshotsIncluded` to true if the change touched UI and the PR body has before/after screenshots, or if the change touched no UI at all.
+   Leave a flag false and say so in the report rather than setting it optimistically; a false flag holds the run open for a human instead of announcing it as ready.
+6. **Report**: the PR URL, the final patrol verdict, and anything a human reviewer should look at first.
 
 ## Judgement calls
 

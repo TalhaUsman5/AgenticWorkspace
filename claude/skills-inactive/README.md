@@ -10,6 +10,7 @@ git mv claude/skills-inactive/<name> claude/skills/<name>
 
 New Claude Code sessions pick it up automatically.
 
-Currently staged:
+Currently staged: nothing.
 
-- `next/` - autonomous-loop work intake (next, work, patrol, ship). Activate once the pipeline is ready for unattended operation.
+`next/` used to be staged here.
+It is active now at `claude/skills/next/`, because OpenClaw invokes it to drive unattended runs.

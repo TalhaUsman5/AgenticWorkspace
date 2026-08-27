@@ -8,11 +8,17 @@ description: Pull the next work item from the project's queue, claim it, and dri
 Turn a waiting queue into finished, shipped work.
 One item per invocation: claim it, do it, deliver it, stop.
 
-## Before activating this skill
+## Commit and push authority
 
-AGENTS.md currently rules "do not commit or push unless asked", which is correct for interactive work but blocks an autonomous loop.
-When implementing loops, update that rule in AGENTS.md with a carve-out: commits and pushes made by the /next, /ship workflow on a claimed queue item count as asked-for.
-Do not activate this skill until that carve-out exists, or every iteration will stall waiting for permission.
+AGENTS.md rules "do not commit or push unless asked", which is correct for interactive work but would block an autonomous loop.
+Its carve-out covers this skill: once /next has claimed a queue item, the commits and pushes /next and /ship make for that item count as asked-for.
+The carve-out is scoped to the claimed item's own branch, so pushing to `master`/`main` and force-pushing stay forbidden here too.
+
+## How this skill gets invoked
+
+Unattended runs do not come from a human typing `/next`.
+OpenClaw spawns a worktree and a detached tmux session and calls `claude -p '/next'` inside it, then hands supervision to `.openclaw/check-agents.sh`.
+See `.openclaw/skills/patrol-loop.md` for the spawn contract and `docs/openclaw-migration.md` for the whole loop.
 
 ## Resolve the queue
 

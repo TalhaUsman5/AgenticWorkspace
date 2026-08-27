@@ -227,7 +227,59 @@ if ($LASTEXITCODE -ne 0) {
     Write-Ok "patrol-loop.md and check-agents.sh deployed"
 }
 
-# 5. Interactive onboarding - must be run by hand ---------------------------
+# 5. systemd user timer for the monitor -------------------------------------
+# Safe to enable before onboarding: check-agents.sh exits 0 immediately when
+# ~/.openclaw/state holds no runs, so an armed timer just no-ops until the
+# gateway starts spawning work.
+Write-Step "Installing the monitor's systemd timer"
+$timerScript = @'
+set -euo pipefail
+mkdir -p ~/.config/systemd/user
+
+cat > ~/.config/systemd/user/openclaw-check-agents.service <<'EOF'
+[Unit]
+Description=Poll OpenClaw-spawned Claude Code runs
+
+[Service]
+Type=oneshot
+ExecStart=%h/.openclaw/scripts/check-agents.sh
+EOF
+
+cat > ~/.config/systemd/user/openclaw-check-agents.timer <<'EOF'
+[Unit]
+Description=Run the OpenClaw agent monitor every 2 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+Unit=openclaw-check-agents.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
+if ! systemctl --user daemon-reload 2>/dev/null; then
+  echo "no-systemd-session"
+  exit 0
+fi
+systemctl --user enable --now openclaw-check-agents.timer
+echo "timer-enabled"
+'@
+$timerResult = wsl @wslExec -e bash -c $timerScript
+if ($LASTEXITCODE -ne 0) {
+    Write-Warn2 "Could not install the monitor timer - see docs/openclaw-migration.md to do it by hand"
+} elseif ($timerResult -match 'no-systemd-session') {
+    Write-Warn2 "Units written, but no systemd user session to enable them in yet."
+    Write-Warn2 "Run this once inside WSL: systemctl --user enable --now openclaw-check-agents.timer"
+} else {
+    Write-Ok "monitor timer enabled (every 2 minutes)"
+    # Without lingering, the user manager stops when the last shell exits and
+    # the timer stops with it - which is exactly when unattended runs matter.
+    wsl @wslExec -u root -e loginctl enable-linger $defaultUser 2>$null
+    if ($LASTEXITCODE -eq 0) { Write-Ok "lingering enabled for $defaultUser" }
+}
+
+# 6. Interactive onboarding - must be run by hand ---------------------------
 Write-Host ""
 Write-Host "WSL + OpenClaw installed. Finish onboarding manually:" -ForegroundColor Green
 Write-Host "  wsl -d $Distro"
@@ -236,4 +288,5 @@ Write-Host ""
 Write-Host "In the wizard: bind the gateway to loopback only, choose Anthropic as the" -ForegroundColor Yellow
 Write-Host "model provider, and connect whichever messaging channel you'll trigger tasks from." -ForegroundColor Yellow
 Write-Host ""
-Write-Host "Then enable the monitor timer inside WSL - see docs/openclaw-migration.md." -ForegroundColor Yellow
+Write-Host "You also need gh authenticated inside WSL, since the monitor reads PR" -ForegroundColor Yellow
+Write-Host "state through it:  wsl -d $Distro -- gh auth login" -ForegroundColor Yellow

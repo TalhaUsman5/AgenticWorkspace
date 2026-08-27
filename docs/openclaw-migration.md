@@ -71,10 +71,17 @@ You also need `gh` authenticated inside WSL, since the monitor reads PR state th
 gh auth login
 ```
 
-## Enable the monitor timer
+## The monitor timer
 
-The monitor is not started by the installer.
-Create these two units inside WSL, then enable the timer:
+`bootstrap/openclaw-wsl.ps1` installs and enables this for you, and turns on
+lingering so it survives closing your last WSL shell.
+Enabling it before onboarding is safe: `check-agents.sh` exits 0 immediately
+when no runs exist, so the timer no-ops until the gateway spawns work.
+
+Check on it with `systemctl --user list-timers` and
+`journalctl --user -u openclaw-check-agents`.
+
+The units it writes, for reference or manual setup:
 
 `~/.config/systemd/user/openclaw-check-agents.service`
 
@@ -108,7 +115,17 @@ systemctl --user enable --now openclaw-check-agents.timer
 loginctl enable-linger "$USER"   # keep the timer alive when no shell is open
 ```
 
-Check on it with `systemctl --user list-timers` and `journalctl --user -u openclaw-check-agents`.
+## First-run setup on a fresh distro
+
+`wsl --install` is run with `--no-launch`, so a newly registered distro has no
+user account until you create one.
+The installer refuses to continue in that state rather than installing into
+`/root`, where the config would become unreachable once a real user exists.
+
+Create the account interactively with `wsl -d Ubuntu`, then re-run the
+installer with `-SkipWslInstall`.
+That prompt needs a TTY, so it cannot be completed from a non-interactive
+shell or an agent session.
 
 ## Security posture
 

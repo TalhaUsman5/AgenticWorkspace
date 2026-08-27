@@ -18,6 +18,9 @@ if [ ! -f "$SCRIPT" ]; then
 fi
 
 chmod +x "$TESTS_DIR"/stubbin/* 2>/dev/null
+# Captured before stubbin is prepended, so the "openclaw not installed" test
+# can build a PATH with the other stubs but a real gap where openclaw would be.
+SYSTEM_PATH="$PATH"
 export PATH="$TESTS_DIR/stubbin:$PATH"
 
 WORK="$(mktemp -d)"
@@ -190,6 +193,127 @@ echo "no state directory is not an error"
 rm -rf "$HOME"; mkdir -p "$HOME"
 bash "$SCRIPT" >/dev/null 2>&1
 is "exits clean" "$?" "0"
+
+# --- a run reaching done notifies the gateway once, with the PR number ------------
+echo
+echo "a run reaching done notifies the gateway with the task id and PR number"
+reset_state
+write_state t1 running 0 false false true true "$WT"
+NOTIFYLOG="$WORK/openclaw.log"; : > "$NOTIFYLOG"
+TMUX_ALIVE=1 GH_PR_NUMBER=42 GH_CI_STATE=true OPENCLAW_LOG="$NOTIFYLOG" \
+  bash "$SCRIPT" >/dev/null 2>&1
+is "status is done" "$(field "$STATE/t1.json" status)" "done"
+is "gateway was notified once" "$(grep -c -- '---' "$NOTIFYLOG" || true)" "1"
+is "notification names the task id" "$(grep -c 't1' "$NOTIFYLOG" || true)" "1"
+is "notification names the PR number" "$(grep -c '#42' "$NOTIFYLOG" || true)" "1"
+
+# --- a run failing at the attempt cap notifies with attempts and pane output ------
+echo
+echo "a run that fails at the attempt cap notifies with attempts and pane output"
+reset_state
+write_state t1 running 3 false false false false "$WT"
+NOTIFYLOG="$WORK/openclaw.log"; : > "$NOTIFYLOG"
+# First tick: session still alive, so the monitor caches the pane tail it will
+# need later - the second tick's dead session has nothing left to capture.
+TMUX_ALIVE=1 TMUX_PANE_OUTPUT="agent trace: something went wrong" \
+  OPENCLAW_LOG="$NOTIFYLOG" bash "$SCRIPT" >/dev/null 2>&1
+is "attempts untouched while still alive" "$(field "$STATE/t1.json" attempts)" "3"
+is "no notification yet" "$(grep -c -- '---' "$NOTIFYLOG" || true)" "0"
+# Second tick: session is dead and attempts are already at the cap.
+TMUX_ALIVE=0 OPENCLAW_LOG="$NOTIFYLOG" bash "$SCRIPT" >/dev/null 2>&1
+is "status is failed" "$(field "$STATE/t1.json" status)" "failed"
+is "gateway was notified once" "$(grep -c -- '---' "$NOTIFYLOG" || true)" "1"
+is "notification carries the attempt count" "$(grep -c '3 attempt' "$NOTIFYLOG" || true)" "1"
+is "notification carries the cached pane output" \
+   "$(grep -c 'agent trace: something went wrong' "$NOTIFYLOG" || true)" "1"
+
+# --- a stale cached pane does not survive into a later restart attempt -----------
+# lastPane is a snapshot of whichever session was alive when it was captured.
+# Once that session dies and a fresh one is spun up in its place, the old
+# snapshot describes a session that no longer exists and must not be handed
+# to a later attempt's failure notification as if it were current.
+echo
+echo "a stale cached pane is cleared on restart, not carried into a later failure"
+reset_state
+write_state t1 running 1 false false false false "$WT"
+NOTIFYLOG="$WORK/openclaw.log"; : > "$NOTIFYLOG"
+# Tick 1: session alive, caches attempt 1's pane output.
+TMUX_ALIVE=1 TMUX_PANE_OUTPUT="attempt one output" OPENCLAW_LOG="$NOTIFYLOG" \
+  bash "$SCRIPT" >/dev/null 2>&1
+is "lastPane cached from the alive tick" "$(field "$STATE/t1.json" lastPane)" "attempt one output"
+# Tick 2: session dead, under the cap - restarts and must clear the stale snapshot.
+TMUX_ALIVE=0 OPENCLAW_LOG="$NOTIFYLOG" bash "$SCRIPT" >/dev/null 2>&1
+is "attempts incremented" "$(field "$STATE/t1.json" attempts)" "2"
+is "lastPane cleared on restart" "$(field "$STATE/t1.json" lastPane)" "null"
+# Tick 3: the new session also dies immediately, before ever being observed
+# alive, so nothing new gets cached, and attempts now reach the cap.
+TMUX_ALIVE=0 OPENCLAW_LOG="$NOTIFYLOG" bash "$SCRIPT" >/dev/null 2>&1
+is "attempts reached the cap" "$(field "$STATE/t1.json" attempts)" "3"
+# Tick 4: attempts are at the cap - this is the failure tick.
+TMUX_ALIVE=0 OPENCLAW_LOG="$NOTIFYLOG" bash "$SCRIPT" >/dev/null 2>&1
+is "status is failed" "$(field "$STATE/t1.json" status)" "failed"
+is "failure notification does not carry the stale attempt-1 output" \
+   "$(grep -c 'attempt one output' "$NOTIFYLOG" || true)" "0"
+
+# --- a vanished worktree also notifies with attempts and a reason -----------------
+echo
+echo "a vanished worktree notifies the gateway with the failure reason"
+reset_state
+write_state t1 running 1 false false false false "$WORK/gone"
+NOTIFYLOG="$WORK/openclaw.log"; : > "$NOTIFYLOG"
+TMUX_ALIVE=0 OPENCLAW_LOG="$NOTIFYLOG" bash "$SCRIPT" >/dev/null 2>&1
+is "status is failed" "$(field "$STATE/t1.json" status)" "failed"
+is "gateway was notified once" "$(grep -c -- '---' "$NOTIFYLOG" || true)" "1"
+is "notification names the missing worktree" "$(grep -c 'is gone' "$NOTIFYLOG" || true)" "1"
+
+# --- a terminal run is never re-notified on a later sweep -------------------------
+echo
+echo "a run already marked done is not re-notified on the next sweep"
+reset_state
+write_state t1 "done" 0 true true true true "$WT"
+NOTIFYLOG="$WORK/openclaw.log"; : > "$NOTIFYLOG"
+TMUX_ALIVE=1 GH_PR_NUMBER=42 GH_CI_STATE=true OPENCLAW_LOG="$NOTIFYLOG" \
+  bash "$SCRIPT" >/dev/null 2>&1
+is "no notification sent for an already-terminal run" \
+   "$(grep -c -- '---' "$NOTIFYLOG" || true)" "0"
+
+# --- a failed notification does not break the sweep --------------------------------
+echo
+echo "a gateway that rejects the notification does not stop the sweep"
+reset_state
+write_state t1 running 3 false false false false "$WT"
+write_state t2 running 0 false false false false "$WT"
+TMUX_ALIVE=0 OPENCLAW_FAIL=1 bash "$SCRIPT" >/dev/null 2>&1
+is "exits clean despite the notify failure" "$?" "0"
+is "t1 still recorded failed" "$(field "$STATE/t1.json" status)" "failed"
+is "t2 was still processed after t1's notify failed" "$(field "$STATE/t2.json" attempts)" "1"
+
+# --- the sweep survives openclaw not being installed at all -----------------------
+echo
+echo "the sweep completes even when openclaw is not on PATH"
+reset_state
+write_state t1 running 0 false false true true "$WT"
+LIMITED_BIN="$WORK/limited-bin"; mkdir -p "$LIMITED_BIN"
+ln -sf "$TESTS_DIR/stubbin/jq" "$LIMITED_BIN/jq"
+ln -sf "$TESTS_DIR/stubbin/gh" "$LIMITED_BIN/gh"
+ln -sf "$TESTS_DIR/stubbin/tmux" "$LIMITED_BIN/tmux"
+TMUX_ALIVE=1 GH_PR_NUMBER=42 GH_CI_STATE=true \
+  PATH="$LIMITED_BIN:$SYSTEM_PATH" bash "$SCRIPT" >/dev/null 2>&1
+is "exits clean without openclaw installed" "$?" "0"
+is "status still reaches done" "$(field "$STATE/t1.json" status)" "done"
+
+# --- a hanging notifier does not block the sweep past its timeout -----------------
+echo
+echo "a hanging openclaw call is killed rather than blocking the sweep"
+reset_state
+write_state t1 running 0 false false true true "$WT"
+START=$(date +%s)
+TMUX_ALIVE=1 GH_PR_NUMBER=42 GH_CI_STATE=true OPENCLAW_HANG=1 NOTIFY_TIMEOUT=2 \
+  bash "$SCRIPT" >/dev/null 2>&1
+ELAPSED=$(( $(date +%s) - START ))
+is "status still reaches done past a hung notifier" "$(field "$STATE/t1.json" status)" "done"
+if [ "$ELAPSED" -lt 30 ]; then ok "hung notifier was cut off well under its 300s sleep (${ELAPSED}s)"; \
+else bad "hung notifier was cut off well under its 300s sleep" "<30s" "${ELAPSED}s"; fi
 
 echo
 echo "passed $PASS, failed $FAIL"

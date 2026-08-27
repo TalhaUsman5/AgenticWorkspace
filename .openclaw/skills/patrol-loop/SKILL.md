@@ -71,11 +71,20 @@ the backlog on <project>").
 
 ## When the monitor reports back
 
-`check-agents.sh` updates the state file and will message you (the OpenClaw
-agent) when:
+`check-agents.sh` updates the state file and notifies the gateway (via
+`openclaw agent --agent main --message ... --deliver`, timeboxed so a stuck
+CLI or an unreachable gateway can never block the sweep) when:
 - all `checks` pass -> summarize the PR to the user and mark `status: "done"`.
-- attempts hit 3 without success -> surface the failure and the last tmux
-  pane output to the user; do not restart a 4th time automatically.
+- attempts hit 3 without success, or the worktree has vanished -> surface the
+  failure and the last tmux pane output to the user; do not restart a 4th
+  time automatically.
+
+Each terminal outcome is notified once: the transition to `done`/`failed` and
+the notification happen together, and a terminal state is never revisited on
+a later sweep.
+Notification failure (missing `openclaw`, unreachable gateway, a hang) never
+breaks the sweep or leaves the state file inconsistent - it is best-effort on
+top of state that is already correct.
 
 ## Division of labour over the checks
 

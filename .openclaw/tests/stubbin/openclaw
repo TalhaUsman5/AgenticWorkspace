@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# openclaw stub.
+#   OPENCLAW_LOG   if set, each `agent --message <text>` call appends <text> to
+#                  this file, separated by a "---" line, so a test can assert
+#                  what the monitor tried to send
+#   OPENCLAW_FAIL  if "1", the stub exits 1 after logging (simulates a
+#                  gateway/CLI failure)
+#   OPENCLAW_HANG  if "1", the stub sleeps far longer than any sane monitor
+#                  timeout, so a test can assert the caller's own watchdog
+#                  kills it rather than blocking the sweep
+[ "${OPENCLAW_HANG:-0}" = "1" ] && sleep 300
+
+if [ "$1" = "agent" ]; then
+  message=""
+  while [ $# -gt 0 ]; do
+    if [ "$1" = "--message" ]; then message="$2"; fi
+    shift
+  done
+  [ -n "${OPENCLAW_LOG:-}" ] && { printf '%s\n' "$message" >> "$OPENCLAW_LOG"; printf -- '---\n' >> "$OPENCLAW_LOG"; }
+fi
+
+[ "${OPENCLAW_FAIL:-0}" = "1" ] && exit 1
+exit 0

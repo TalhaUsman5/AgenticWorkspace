@@ -55,11 +55,17 @@ for state_file in "$STATE_DIR"/*.json; do
 
   repo_url=$(git -C "$worktree" remote get-url origin 2>/dev/null || echo "")
 
+  # Ask the worktree which branch it is on rather than assuming
+  # "agent/<task-id>". patrol-loop.md creates the worktree on that name, but
+  # /next then cuts its own `<type>/issue-<n>-<slug>` branch and works there,
+  # so the assumed name matches no PR and every run would stay un-done.
+  head_branch=$(git -C "$worktree" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+
   # Check for an associated PR and its CI status via gh CLI.
   pr_number=""
-  if [ -n "$repo_url" ]; then
+  if [ -n "$repo_url" ] && [ -n "$head_branch" ]; then
     pr_number=$(gh pr list --repo "$repo_url" \
-      --head "agent/${task_id}" --json number --jq '.[0].number' 2>/dev/null || echo "")
+      --head "$head_branch" --json number --jq '.[0].number' 2>/dev/null || echo "")
   fi
 
   pr_created=false
@@ -97,8 +103,11 @@ for state_file in "$STATE_DIR"/*.json; do
     else
       echo "[$task_id] session died, restarting (attempt $((attempts + 1)))"
       tmux new-session -d -s "$session" -c "$worktree"
+      # OPENCLAW_TASK_ID goes on the command line, not through `tmux setenv`:
+      # setenv only reaches panes created afterwards, so a shell that already
+      # exists never sees it and /ship cannot find its state file.
       tmux send-keys -t "$session" \
-        "claude --dangerously-skip-permissions -p '/next'" Enter
+        "OPENCLAW_TASK_ID=$task_id claude --dangerously-skip-permissions -p '/next'" Enter
       tmp=$(mktemp)
       jq '.attempts += 1' "$state_file" > "$tmp" && mv "$tmp" "$state_file"
     fi

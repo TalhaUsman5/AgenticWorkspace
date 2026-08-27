@@ -82,17 +82,23 @@ if (-not $SkipWslInstall) {
             Write-Warn2 "Found only system distros: $($distros -join ', ')"
             Write-Warn2 "Those are Docker/Rancher utility distros, not usable for OpenClaw."
         }
-        wsl --install -d $Distro
+        # --no-launch matters: without it, `wsl --install` starts the distro and
+        # blocks on an interactive "Enter new UNIX username" prompt, which hangs
+        # forever when this script runs from a non-interactive shell.
+        wsl --install -d $Distro --no-launch
         Write-Host ""
-        Write-Host "Reboot now, finish $Distro's first-run prompts (username/password)," -ForegroundColor Yellow
-        Write-Host "then re-run: .\openclaw-wsl.ps1 -SkipWslInstall" -ForegroundColor Yellow
+        Write-Host "$Distro registered. Finish its first-run setup in a terminal:" -ForegroundColor Yellow
+        Write-Host "  wsl -d $Distro" -ForegroundColor Yellow
+        Write-Host "(it will ask for a UNIX username and password), then re-run:" -ForegroundColor Yellow
+        Write-Host "  .\openclaw-wsl.ps1 -SkipWslInstall" -ForegroundColor Yellow
         exit 0
     } else {
         Write-Warn2 "$Distro not found, but these distros exist: $($usable -join ', ')"
         Write-Warn2 "Re-run with -Distro <name> to target one of them, or let this install $Distro."
-        wsl --install -d $Distro
+        wsl --install -d $Distro --no-launch
         Write-Host ""
-        Write-Host "Reboot, finish first-run prompts, then re-run with -SkipWslInstall." -ForegroundColor Yellow
+        Write-Host "$Distro registered. Run 'wsl -d $Distro' to create your user," -ForegroundColor Yellow
+        Write-Host "then re-run with -SkipWslInstall." -ForegroundColor Yellow
         exit 0
     }
 }
@@ -107,6 +113,23 @@ if ($present -notcontains $Distro) {
     Write-Host "Distro '$Distro' is not installed. Run without -SkipWslInstall first." -ForegroundColor Red
     exit 1
 }
+
+# A freshly registered distro whose first-run setup never completed has no
+# account above uid 1000, so `wsl -e` runs everything as root and the openclaw
+# config below would land in /root/.openclaw, where the real user can't reach
+# it. Refuse rather than build a broken install.
+$defaultUser = (wsl @wslExec -e whoami 2>$null | Out-String).Trim()
+if ($defaultUser -eq 'root' -or -not $defaultUser) {
+    Write-Host ""
+    Write-Host "$Distro has no regular user account yet - its first-run setup never finished." -ForegroundColor Red
+    Write-Host "Everything below would install into /root and break once you create your user." -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Finish setup in an interactive terminal, then re-run this script:" -ForegroundColor Yellow
+    Write-Host "  wsl -d $Distro" -ForegroundColor Yellow
+    Write-Host "  .\bootstrap\openclaw-wsl.ps1 -SkipWslInstall" -ForegroundColor Yellow
+    exit 1
+}
+Write-Ok "$Distro default user: $defaultUser"
 
 # 2. Enable systemd inside WSL --------------------------------------------
 # /etc/wsl.conf is user state this script did not create, so it is only

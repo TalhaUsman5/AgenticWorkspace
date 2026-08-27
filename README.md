@@ -34,7 +34,8 @@ Claude Code is the primary AI agent harness.
 ├── docs/
 │   └── openclaw-migration.md       # How the unattended loop is wired, and its manual steps
 ├── scripts/
-│   └── install-configs.ps1         # Symlink configs into system paths, install fonts
+│   ├── install-configs.ps1         # Symlink configs into system paths, install fonts
+│   └── openclaw-doctor.ps1         # Read-only readiness check for the unattended pipeline
 └── bootstrap/
     ├── workspace-windows.ps1       # Install dev tools (winget, npm, gh extensions)
     ├── openclaw-wsl.ps1            # Install WSL2 + Ubuntu + OpenClaw, deploy .openclaw/ config
@@ -169,3 +170,5 @@ A run that dies before `/ship` therefore cannot look finished.
 
 Install it with `bootstrap\openclaw-wsl.ps1`, then finish onboarding by hand.
 Full detail, including the manual onboarding steps, is in [docs/openclaw-migration.md](docs/openclaw-migration.md).
+
+Check whether the pipeline is actually working with `.\scripts\openclaw-doctor.ps1` - a read-only readiness check that reports a pass/fail marker and a remedy for each failing check, instead of a dozen ad-hoc `wsl -d Ubuntu -- ...` probes.

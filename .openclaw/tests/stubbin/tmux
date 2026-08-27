@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# tmux stub. TMUX_ALIVE controls whether has-session succeeds.
+case "$1" in
+  has-session) [ "${TMUX_ALIVE:-0}" = "1" ] ;;
+  new-session|send-keys) echo "[tmux stub] $*" >&2 ;;
+  *) exit 0 ;;
+esac

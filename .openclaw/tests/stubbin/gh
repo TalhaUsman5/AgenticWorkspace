@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# gh stub. GH_PR_NUMBER / GH_CI_STATE control the fake PR responses.
+case "$2" in
+  list)   echo "${GH_PR_NUMBER:-}" ;;
+  checks) echo "${GH_CI_STATE:-false}" ;;
+  *)      exit 0 ;;
+esac

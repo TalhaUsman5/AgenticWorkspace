@@ -17,10 +17,18 @@ for state_file in "$STATE_DIR"/*.json; do
   [ -e "$state_file" ] || continue
 
   task_id=$(basename "$state_file" .json)
-  session=$(jq -r '.session' "$state_file")
-  worktree=$(jq -r '.worktree' "$state_file")
-  status=$(jq -r '.status' "$state_file")
-  attempts=$(jq -r '.attempts' "$state_file")
+  session=$(jq -r '.session // empty' "$state_file" 2>/dev/null || echo "")
+  worktree=$(jq -r '.worktree // empty' "$state_file" 2>/dev/null || echo "")
+  status=$(jq -r '.status // empty' "$state_file" 2>/dev/null || echo "")
+  attempts=$(jq -r '.attempts // 0' "$state_file" 2>/dev/null || echo 0)
+
+  # This directory is shared with OpenClaw's own state (openclaw.sqlite lives
+  # here too). Anything without a session and a worktree is not one of our run
+  # files, so leave it alone - without this guard the worktree check below
+  # would overwrite a foreign file with {"status":"failed"}.
+  if [ -z "$session" ] || [ -z "$worktree" ]; then
+    continue
+  fi
 
   # Terminal states are left alone. Spelled as an if rather than
   # `[ a ] || [ b ] && continue`: that form works, but only because the

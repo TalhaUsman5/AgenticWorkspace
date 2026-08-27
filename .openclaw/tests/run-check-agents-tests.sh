@@ -131,6 +131,26 @@ TMUX_ALIVE=0 bash "$SCRIPT" >/dev/null 2>&1
 is "status is failed" "$(field "$STATE/t1.json" status)" "failed"
 is "no restart attempted" "$(field "$STATE/t1.json" attempts)" "0"
 
+# --- foreign json in the shared state dir is left alone ---------------------------
+# OpenClaw keeps its own state (openclaw.sqlite and friends) in this same
+# directory, so the monitor must not touch anything that is not one of its runs.
+echo
+echo "a foreign json file in the state dir is not mistaken for a run"
+reset_state
+write_state t1 running 0 false false true true "$WT"
+cat > "$STATE/openclaw-internal.json" <<'EOF'
+{"someOpenClawKey":"value","nested":{"a":1}}
+EOF
+TMUX_ALIVE=1 GH_PR_NUMBER=42 GH_CI_STATE=true bash "$SCRIPT" >/dev/null 2>&1
+is "exits clean" "$?" "0"
+is "foreign file untouched" \
+   "$(node -e "const f=require('fs').readFileSync(process.argv[1],'utf8');console.log(JSON.parse(f).someOpenClawKey||'GONE')" "$STATE/openclaw-internal.json")" \
+   "value"
+is "foreign file gained no status field" \
+   "$(node -e "const f=require('fs').readFileSync(process.argv[1],'utf8');console.log(JSON.parse(f).status===undefined?'none':'CLOBBERED')" "$STATE/openclaw-internal.json")" \
+   "none"
+is "the real run still processed" "$(field "$STATE/t1.json" status)" "done"
+
 # --- no state directory at all ---------------------------------------------------
 echo
 echo "no state directory is not an error"

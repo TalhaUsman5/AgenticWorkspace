@@ -1,7 +1,25 @@
 #!/usr/bin/env bash
-# gh stub. GH_PR_NUMBER / GH_CI_STATE control the fake PR responses.
+# gh stub.
+#   GH_PR_NUMBER   number to return from `pr list`
+#   GH_CI_STATE    true|false, returned from `pr checks`
+#   GH_EXPECT_HEAD if set, `pr list` only returns a number when the --head it
+#                  was given matches. Lets a test assert which branch the
+#                  monitor actually queried.
+#   GH_HEAD_LOG    if set, the --head value is appended to this file.
 case "$2" in
-  list)   echo "${GH_PR_NUMBER:-}" ;;
+  list)
+    head=""
+    while [ $# -gt 0 ]; do
+      if [ "$1" = "--head" ]; then head="$2"; fi
+      shift
+    done
+    [ -n "${GH_HEAD_LOG:-}" ] && echo "$head" >> "$GH_HEAD_LOG"
+    if [ -n "${GH_EXPECT_HEAD:-}" ] && [ "$head" != "$GH_EXPECT_HEAD" ]; then
+      echo ""
+    else
+      echo "${GH_PR_NUMBER:-}"
+    fi
+    ;;
   checks) echo "${GH_CI_STATE:-false}" ;;
   *)      exit 0 ;;
 esac

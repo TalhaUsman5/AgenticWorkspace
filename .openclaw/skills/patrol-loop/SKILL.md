@@ -33,8 +33,11 @@ the backlog on <project>").
    skill:
    ```
    tmux send-keys -t aw-<task-id> \
-     "claude --dangerously-skip-permissions -p '/next'" Enter
+     "OPENCLAW_TASK_ID=<task-id> claude --dangerously-skip-permissions -p '/next'" Enter
    ```
+   `OPENCLAW_TASK_ID` must go on the command line. `tmux setenv` only reaches
+   panes created after it runs, so the shell already sitting in this session
+   never sees it, and `/ship` then has no state file to record its checks in.
    (`/next` picks the next backlog item, works it, runs `/patrol`, then `/ship`
    per AGENTS.md - see the workspace repo's own skill definitions.)
 5. Write an initial state file so the deterministic monitor can pick this run
@@ -57,9 +60,11 @@ the backlog on <project>").
      }
    }
    ```
-   ```
-   tmux setenv -t aw-<task-id> OPENCLAW_TASK_ID <task-id>
-   ```
+   Note that the worktree's branch is not the branch the PR ends up on.
+   `/next` cuts its own `<type>/issue-<n>-<slug>` branch inside the worktree
+   and works there, so `agent/<task-id>` is only the starting point.
+   `check-agents.sh` reads the worktree's current branch rather than assuming
+   a name; do not record a branch name in the state file.
 6. Do NOT poll the session yourself in a loop - that's `check-agents.sh`'s
    job, run on a timer. Reply to the user that the run has started and where
    to see it (`tmux attach -t aw-<task-id>`), then stop.

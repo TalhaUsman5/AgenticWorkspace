@@ -39,6 +39,11 @@ make_worktree() {
   rm -rf "$WORK/$1"; mkdir -p "$WORK/$1"
   git -C "$WORK/$1" init -q
   git -C "$WORK/$1" remote add origin "https://example.com/o/r.git"
+  # a branch needs at least one commit before rev-parse --abbrev-ref works
+  git -C "$WORK/$1" -c user.email=t@e -c user.name=t commit -q --allow-empty -m init
+  if [ -n "${2:-}" ]; then
+    git -C "$WORK/$1" checkout -q -b "$2"
+  fi
 }
 
 # task_id status attempts prCreated ciPassed reviewPassed shotsIncluded worktree
@@ -130,6 +135,54 @@ write_state t1 running 0 false false false false "$WORK/gone"
 TMUX_ALIVE=0 bash "$SCRIPT" >/dev/null 2>&1
 is "status is failed" "$(field "$STATE/t1.json" status)" "failed"
 is "no restart attempted" "$(field "$STATE/t1.json" attempts)" "0"
+
+# --- the PR is found by the worktree's real branch --------------------------------
+# /next cuts its own feat/issue-<n>-<slug> branch inside the worktree, so the
+# monitor must query that, not the agent/<task-id> name patrol-loop started on.
+echo
+echo "the PR is looked up by the worktree's actual branch"
+reset_state
+make_worktree wt2 "feat/issue-2-openclaw-doctor"
+HEADLOG="$WORK/heads.log"; : > "$HEADLOG"
+write_state t1 running 0 false false true true "$WORK/wt2"
+TMUX_ALIVE=1 GH_PR_NUMBER=4 GH_CI_STATE=true \
+  GH_EXPECT_HEAD="feat/issue-2-openclaw-doctor" GH_HEAD_LOG="$HEADLOG" \
+  bash "$SCRIPT" >/dev/null 2>&1
+is "queried the worktree branch" "$(tail -1 "$HEADLOG")" "feat/issue-2-openclaw-doctor"
+is "did not query agent/<task-id>" "$(grep -c '^agent/t1$' "$HEADLOG" || true)" "0"
+is "run reached done" "$(field "$STATE/t1.json" status)" "done"
+
+# --- restart passes OPENCLAW_TASK_ID on the command line --------------------------
+# tmux setenv only reaches panes created afterwards, so /ship would never find
+# its state file if the id were not on the command line itself.
+echo
+echo "a restart puts OPENCLAW_TASK_ID on the command line"
+reset_state
+write_state t1 running 0 false false false false "$WT"
+TMUX_LOG="$WORK/tmux.log"; : > "$TMUX_LOG"
+TMUX_ALIVE=0 TMUX_CMD_LOG="$TMUX_LOG" bash "$SCRIPT" >/dev/null 2>&1
+is "send-keys carries the task id" \
+   "$(grep -c 'OPENCLAW_TASK_ID=t1 claude' "$TMUX_LOG" || true)" "1"
+
+# --- foreign json in the shared state dir is left alone ---------------------------
+# OpenClaw keeps its own state (openclaw.sqlite and friends) in this same
+# directory, so the monitor must not touch anything that is not one of its runs.
+echo
+echo "a foreign json file in the state dir is not mistaken for a run"
+reset_state
+write_state t1 running 0 false false true true "$WT"
+cat > "$STATE/openclaw-internal.json" <<'EOF'
+{"someOpenClawKey":"value","nested":{"a":1}}
+EOF
+TMUX_ALIVE=1 GH_PR_NUMBER=42 GH_CI_STATE=true bash "$SCRIPT" >/dev/null 2>&1
+is "exits clean" "$?" "0"
+is "foreign file untouched" \
+   "$(node -e "const f=require('fs').readFileSync(process.argv[1],'utf8');console.log(JSON.parse(f).someOpenClawKey||'GONE')" "$STATE/openclaw-internal.json")" \
+   "value"
+is "foreign file gained no status field" \
+   "$(node -e "const f=require('fs').readFileSync(process.argv[1],'utf8');console.log(JSON.parse(f).status===undefined?'none':'CLOBBERED')" "$STATE/openclaw-internal.json")" \
+   "none"
+is "the real run still processed" "$(field "$STATE/t1.json" status)" "done"
 
 # --- no state directory at all ---------------------------------------------------
 echo

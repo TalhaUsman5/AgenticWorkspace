@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# tmux stub. TMUX_ALIVE controls whether has-session succeeds.
+# tmux stub.
+#   TMUX_ALIVE=1   `has-session` succeeds
+#   TMUX_CMD_LOG   if set, every invocation is appended to this file, so a test
+#                  can assert what the monitor sent to the session
+[ -n "${TMUX_CMD_LOG:-}" ] && echo "$*" >> "$TMUX_CMD_LOG"
 case "$1" in
   has-session) [ "${TMUX_ALIVE:-0}" = "1" ] ;;
   new-session|send-keys) echo "[tmux stub] $*" >&2 ;;

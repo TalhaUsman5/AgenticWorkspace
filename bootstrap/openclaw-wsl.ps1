@@ -231,12 +231,26 @@ cp '$wslRepo/.openclaw/check-agents.sh' ~/.openclaw/scripts/check-agents.sh
 # Windows checkouts can carry CRLF; a CR in the shebang breaks execution.
 sed -i 's/\r$//' ~/.openclaw/scripts/check-agents.sh
 chmod +x ~/.openclaw/scripts/check-agents.sh
+
+# Claude Code inside WSL needs the same instructions and skills that
+# install-configs.ps1 symlinks on the Windows side. Spawned runs invoke
+# /next, /patrol and /ship and are bound by AGENTS.md's rules; without this
+# a run has none of them and silently improvises.
+# Copied rather than symlinked, so runs do not depend on /mnt/c being
+# mounted. Re-run this script to pick up changes.
+mkdir -p ~/.claude/skills
+cp '$wslRepo/AGENTS.md' ~/.claude/AGENTS.md
+cp '$wslRepo/AGENTS.md' ~/.claude/CLAUDE.md
+cp '$wslRepo/claude/POLICE.md' ~/.claude/POLICE.md
+cp -r '$wslRepo/claude/skills/.' ~/.claude/skills/
+# settings.json is deliberately not copied: the Windows copy is theme-only
+# and this file holds the distro's own Claude Code state.
 "@
 wsl @wslExec -e bash -c $copyScript
 if ($LASTEXITCODE -ne 0) {
     Write-Warn2 "Could not copy .openclaw/ config - copy it by hand from $wslRepo/.openclaw/"
 } else {
-    Write-Ok "patrol-loop.md and check-agents.sh deployed"
+    Write-Ok "patrol-loop skill, monitor, and Claude Code skills deployed"
 }
 
 # 5. systemd user timer for the monitor -------------------------------------

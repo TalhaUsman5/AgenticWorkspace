@@ -44,6 +44,14 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# .gitattributes checks this file out with CRLF, so every here-string below
+# carries \r. Bash reads `set -euo pipefail\r` as an option named "pipefail\r"
+# and dies. Strip carriage returns from anything handed to `wsl -e bash -c`.
+# Without this the installer fails on any fresh Windows clone.
+function ConvertTo-LfScript([string]$script) {
+    return ($script -replace "`r`n", "`n") -replace "`r", "`n"
+}
+
 function Write-Step($msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
 function Write-Ok($msg)   { Write-Host "  OK  $msg" -ForegroundColor Green }
 function Write-Warn2($msg){ Write-Host "  !   $msg" -ForegroundColor Yellow }
@@ -155,7 +163,7 @@ appendWindowsPath=true
 EOF
 echo "written"
 '@
-$confResult = wsl @wslExec -u root -e bash -c $wslConf
+$confResult = wsl @wslExec -u root -e bash -c (ConvertTo-LfScript $wslConf)
 if ($LASTEXITCODE -ne 0) {
     Write-Warn2 "Could not configure /etc/wsl.conf"
 } elseif ($confResult -match 'already-enabled') {
@@ -203,7 +211,7 @@ sudo npm install -g @anthropic-ai/claude-code
 
 mkdir -p ~/.openclaw/workspace/skills ~/.openclaw/scripts ~/.openclaw/state
 '@
-wsl @wslExec -e bash -c $installScript
+wsl @wslExec -e bash -c (ConvertTo-LfScript $installScript)
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Install step failed inside $Distro - see output above." -ForegroundColor Red
     exit 1
@@ -246,7 +254,7 @@ cp -r '$wslRepo/claude/skills/.' ~/.claude/skills/
 # settings.json is deliberately not copied: the Windows copy is theme-only
 # and this file holds the distro's own Claude Code state.
 "@
-wsl @wslExec -e bash -c $copyScript
+wsl @wslExec -e bash -c (ConvertTo-LfScript $copyScript)
 if ($LASTEXITCODE -ne 0) {
     Write-Warn2 "Could not copy .openclaw/ config - copy it by hand from $wslRepo/.openclaw/"
 } else {
@@ -291,7 +299,7 @@ fi
 systemctl --user enable --now openclaw-check-agents.timer
 echo "timer-enabled"
 '@
-$timerResult = wsl @wslExec -e bash -c $timerScript
+$timerResult = wsl @wslExec -e bash -c (ConvertTo-LfScript $timerScript)
 if ($LASTEXITCODE -ne 0) {
     Write-Warn2 "Could not install the monitor timer - see docs/openclaw-migration.md to do it by hand"
 } elseif ($timerResult -match 'no-systemd-session') {

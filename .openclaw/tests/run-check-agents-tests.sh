@@ -36,7 +36,7 @@ is()   { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "$3" "$2"; fi; }
 reset_state() { rm -rf "$HOME"; mkdir -p "$STATE"; }
 
 make_worktree() {
-  rm -rf "$WORK/$1"; mkdir -p "$WORK/$1"
+  rm -rf "${WORK:?}/$1"; mkdir -p "${WORK:?}/$1"
   git -C "$WORK/$1" init -q
   git -C "$WORK/$1" remote add origin "https://example.com/o/r.git"
   # a branch needs at least one commit before rev-parse --abbrev-ref works
@@ -69,7 +69,7 @@ echo
 echo "a task still running does not end the sweep"
 reset_state
 write_state t1 running 0 false false false false "$WT"
-write_state t2 done    0 true  true  true  true  "$WT"
+write_state t2 "done"  0 true  true  true  true  "$WT"
 write_state t3 running 0 false false false false "$WT"
 TMUX_ALIVE=1 bash "$SCRIPT" >/dev/null 2>&1
 is "exits clean" "$?" "0"

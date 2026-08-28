@@ -7,6 +7,7 @@ set -euo pipefail
 STATE_DIR="$HOME/.openclaw/state"
 MAX_ATTEMPTS=3
 NOTIFY_TIMEOUT="${NOTIFY_TIMEOUT:-15}"
+LIVENESS_TIMEOUT="${LIVENESS_TIMEOUT:-5}"
 
 command -v jq >/dev/null 2>&1 || { echo "jq is required" >&2; exit 1; }
 command -v gh >/dev/null 2>&1 || { echo "gh is required" >&2; exit 1; }
@@ -106,13 +107,26 @@ for state_file in "$STATE_DIR"/*.json; do
   # scraping pane text for a prompt or error string (locale-dependent and
   # brittle). It reads "claude" while the agent runs and falls back to the
   # login shell's name (bash, zsh, sh) the moment that process exits.
-  # Timeboxed like the gateway notification below: a wedged tmux server must
-  # not be able to hang the sweep.
+  #
+  # No session at all keeps behaving as it always has: dead. A session that
+  # exists defaults to alive rather than dead, and only flips to dead once
+  # `list-panes` positively names something other than "claude" as the
+  # foreground command. That default matters when the check itself is
+  # inconclusive - `list-panes` fails outright, or hangs and the timeout below
+  # cuts it off - because the alternative (defaulting to dead on an
+  # inconclusive read) would kill and restart a session purely because tmux
+  # itself hiccuped, destroying an agent that was genuinely still working.
+  # False positives here are the outcome the issue this fixes calls out as
+  # the dangerous half; a false negative just costs one more sweep interval
+  # before the next tick catches a genuinely dead agent.
   agent_alive=false
   if [ "$session_alive" = "true" ]; then
-    pane_cmd=$(with_timeout 5 tmux list-panes -t "$session" -F '#{pane_current_command}' 2>/dev/null | head -n1 || true)
-    if [ "$pane_cmd" = "claude" ]; then
-      agent_alive=true
+    agent_alive=true
+    if pane_cmd=$(with_timeout "$LIVENESS_TIMEOUT" tmux list-panes -t "$session" -F '#{pane_current_command}' 2>/dev/null); then
+      pane_cmd=$(printf '%s\n' "$pane_cmd" | head -n1)
+      if [ -n "$pane_cmd" ] && [ "$pane_cmd" != "claude" ]; then
+        agent_alive=false
+      fi
     fi
   fi
 
@@ -196,6 +210,13 @@ for state_file in "$STATE_DIR"/*.json; do
       tmp=$(mktemp)
       jq '.status = "failed" | .reported = true' "$state_file" > "$tmp" && mv "$tmp" "$state_file"
       echo "[$task_id] failed after $MAX_ATTEMPTS attempts - needs a human"
+      # Terminal states are skipped on every future sweep (see the continue
+      # above), so a stale session left running here - agent gone, shell
+      # prompt still up - would never get cleaned up again. Tear it down now
+      # rather than leaving a zombie behind.
+      if [ "$session_alive" = "true" ]; then
+        tmux kill-session -t "$session" 2>/dev/null || true
+      fi
     else
       if [ "$session_alive" = "true" ]; then
         echo "[$task_id] agent process gone but session survived, restarting (attempt $((attempts + 1)))"

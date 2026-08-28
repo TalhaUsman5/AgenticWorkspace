@@ -146,6 +146,35 @@ TMUX_ALIVE=1 TMUX_PANE_COMMAND=claude bash "$SCRIPT" >/dev/null 2>&1
 is "attempts untouched" "$(field "$STATE/t1.json" attempts)" "0"
 is "status still running" "$(field "$STATE/t1.json" status)" "running"
 
+# --- an inconclusive liveness check fails safe toward "presume alive" ------------
+# A wedged tmux server answering `list-panes` slowly or not at all is not the
+# same thing as a dead agent. Killing and restarting on that inconclusive a
+# read would risk the exact outcome the issue calls out as the dangerous
+# half: destroying a session whose agent is genuinely still working. The
+# check must time out (LIVENESS_TIMEOUT, kept short here so the test doesn't
+# wait on the real 5s default) without treating the timeout itself as proof
+# of death.
+echo
+echo "a hung liveness check does not get treated as a dead agent"
+reset_state
+write_state t1 running 0 false false false false "$WT"
+START=$(date +%s)
+TMUX_ALIVE=1 TMUX_LIST_PANES_HANG=1 LIVENESS_TIMEOUT=2 bash "$SCRIPT" >/dev/null 2>&1
+ELAPSED=$(( $(date +%s) - START ))
+is "attempts untouched - not treated as dead" "$(field "$STATE/t1.json" attempts)" "0"
+is "status still running" "$(field "$STATE/t1.json" status)" "running"
+if [ "$ELAPSED" -lt 30 ]; then ok "hung liveness check was cut off well under its 300s sleep (${ELAPSED}s)"; \
+else bad "hung liveness check was cut off well under its 300s sleep" "<30s" "${ELAPSED}s"; fi
+
+# --- a failed (not hung) liveness check also fails safe ---------------------------
+echo
+echo "a liveness check that errors outright also presumes the agent alive"
+reset_state
+write_state t1 running 0 false false false false "$WT"
+TMUX_ALIVE=1 TMUX_LIST_PANES_FAIL=1 bash "$SCRIPT" >/dev/null 2>&1
+is "attempts untouched - not treated as dead" "$(field "$STATE/t1.json" attempts)" "0"
+is "status still running" "$(field "$STATE/t1.json" status)" "running"
+
 # --- a dead agent at the attempt cap fails instead of retrying, even with the ------
 # --- session still alive -----------------------------------------------------------
 echo
@@ -153,10 +182,17 @@ echo "a dead agent at the attempt cap fails even though the session is still up"
 reset_state
 write_state t1 running 3 false false false false "$WT"
 NOTIFYLOG="$WORK/openclaw.log"; : > "$NOTIFYLOG"
-TMUX_ALIVE=1 TMUX_PANE_COMMAND=bash OPENCLAW_LOG="$NOTIFYLOG" bash "$SCRIPT" >/dev/null 2>&1
+TMUX_CMD_LOG="$WORK/tmux-cap.log"; : > "$TMUX_CMD_LOG"
+TMUX_ALIVE=1 TMUX_PANE_COMMAND=bash OPENCLAW_LOG="$NOTIFYLOG" TMUX_CMD_LOG="$TMUX_CMD_LOG" bash "$SCRIPT" >/dev/null 2>&1
 is "status is failed" "$(field "$STATE/t1.json" status)" "failed"
 is "attempts not incremented past the cap" "$(field "$STATE/t1.json" attempts)" "3"
 is "gateway was notified once" "$(grep -c -- '---' "$NOTIFYLOG" || true)" "1"
+# A stale session left running here - agent gone, shell prompt still up -
+# would never get swept again once status is terminal (terminal states are
+# skipped on every future tick), so this must clean it up now, not just on
+# the restart path.
+is "stale session is killed rather than left as a zombie" \
+   "$(grep -c '^kill-session' "$TMUX_CMD_LOG")" "1"
 
 # --- restarting over a stale-but-present session kills it first ------------------
 # A session sitting at a shell prompt still holds its name, so `new-session`

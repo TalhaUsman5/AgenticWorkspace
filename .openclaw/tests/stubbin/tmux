@@ -11,6 +11,11 @@
 #                      agent. Set to "bash" (or any non-"claude" value) to
 #                      simulate the agent process having exited while the
 #                      session itself survives.
+#   TMUX_LIST_PANES_FAIL if set, `list-panes` exits non-zero instead of
+#                      reporting a command, simulating an inconclusive check.
+#   TMUX_LIST_PANES_HANG if set, `list-panes` sleeps well past any timeout
+#                      the caller could reasonably set, simulating a wedged
+#                      tmux server rather than a dead agent.
 [ -n "${TMUX_CMD_LOG:-}" ] && echo "$*" >> "$TMUX_CMD_LOG"
 case "$1" in
   has-session) [ "${TMUX_ALIVE:-0}" = "1" ] ;;
@@ -20,6 +25,18 @@ case "$1" in
     fi
     ;;
   list-panes)
+    if [ "${TMUX_LIST_PANES_HANG:-0}" = "1" ]; then
+      # `exec` rather than a plain `sleep 300`: the real tmux binary this
+      # stands in for is a single process, so killing it releases its stdout
+      # fd immediately. A plain `sleep 300` forks a grandchild that would
+      # survive the parent being killed, keep holding this script's stdout
+      # open, and block any caller reading it via command substitution for
+      # the full 300s regardless of the watchdog.
+      exec sleep 300
+    fi
+    if [ "${TMUX_LIST_PANES_FAIL:-0}" = "1" ]; then
+      exit 1
+    fi
     if [ "${TMUX_ALIVE:-0}" = "1" ]; then
       printf '%s\n' "${TMUX_PANE_COMMAND:-claude}"
     fi

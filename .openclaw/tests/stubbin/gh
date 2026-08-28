@@ -2,6 +2,7 @@
 # gh stub.
 #   GH_PR_NUMBER   number to return from `pr list`
 #   GH_CI_STATE    true|false, returned from `pr checks`
+#   GH_PR_STATE    OPEN|CLOSED|MERGED, returned from `pr view --json state`
 #   GH_EXPECT_HEAD if set, `pr list` only returns a number when the --head it
 #                  was given matches. Lets a test assert which branch the
 #                  monitor actually queried.
@@ -21,5 +22,6 @@ case "$2" in
     fi
     ;;
   checks) echo "${GH_CI_STATE:-false}" ;;
+  view)   echo "${GH_PR_STATE:-}" ;;
   *)      exit 0 ;;
 esac

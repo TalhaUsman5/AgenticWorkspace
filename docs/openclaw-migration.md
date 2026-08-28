@@ -36,6 +36,27 @@ The state file at `~/.openclaw/state/<task-id>.json` carries four booleans, spli
 
 A run that dies before reaching `/ship` therefore cannot look finished, which is the property that makes the monitor safe to leave unattended.
 
+## Run history
+
+The state file at `~/.openclaw/state/<task-id>.json` and the worktree it points at are both disposable - a completed run's numbers would otherwise vanish the moment cleanup runs.
+`check-agents.sh` appends one row to `~/.openclaw/run-history.jsonl` in the same tick it writes a terminal `status`, so the record survives both.
+
+Each row carries: task id, project, and the branch that was shipped; `startedAt` / `endedAt` and the wall-clock duration between them; the terminal status (`done` or `failed`) and the attempt count; the four Definition-of-Done checks as recorded at that moment; and the PR number plus, when a lookup succeeds, whether it had already merged.
+Nothing else goes in - no pane output, no PR bodies, no secrets.
+
+`startedAt` comes from the state file `patrol-loop` writes at spawn time; a run started without one still gets recorded, just with a `durationSeconds` of `null`.
+
+Appending is a single `jq -n` call piped into one `printf ... >>`, relying on the POSIX guarantee that a `write()` under `PIPE_BUF` to an `O_APPEND` file descriptor is atomic - so two runs finishing in the same sweep can't interleave into a corrupted line.
+
+Summarise it with:
+
+```powershell
+.\scripts\openclaw-runs.ps1
+.\scripts\openclaw-runs.ps1 -Distro Ubuntu-22.04
+```
+
+It reports total runs, success rate, median/p90 duration, how many runs needed a restart, and which of the four checks most often blocked a run from reaching `done` - the last of which tells you whether runs are failing on CI, on review, or never getting far enough to open a PR at all.
+
 ## Files
 
 - `bootstrap/openclaw-wsl.ps1` - installs WSL2 + Ubuntu, enables systemd, installs Node 22+, `jq`, `tmux`, `gh`, and OpenClaw inside it, then deploys the two files below.
@@ -43,6 +64,8 @@ A run that dies before reaching `/ship` therefore cannot look finished, which is
 - `.openclaw/check-agents.sh` - the deterministic monitor. Deployed to `~/.openclaw/scripts/` inside WSL and run on a systemd timer.
 - `.openclaw/tests/run-check-agents-tests.sh` - regression tests for the monitor. `jq`, `gh`, and `tmux` are stubbed, so it runs on a plain Windows checkout with only Node and bash.
 - `scripts/openclaw-doctor.ps1` - read-only readiness check for the whole pipeline: distro, binaries, deployment, gateway runtime, and auth.
+- `scripts/openclaw-runs.ps1` - summarises `~/.openclaw/run-history.jsonl`: success rate, run duration, restart counts, and which check most often blocks a run.
+- `.openclaw/tests/run-openclaw-runs-tests.sh` - regression tests for the summary script's math, run via `pwsh`.
 
 ## Install
 

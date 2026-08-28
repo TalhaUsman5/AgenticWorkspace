@@ -117,7 +117,10 @@ Rules scoped to work inside the AgenticWorkspace repo itself:
 - Skill changes under `claude/skills/` are live for new Claude Code sessions with no install step; `claude/skills-inactive/` is staged and not loaded.
 - `.openclaw/` is deployed into WSL by `bootstrap/openclaw-wsl.ps1`, not symlinked, so edits there do not take effect until that script is re-run.
 - Quality gate tooling: lint is `stylua --check .` plus `Invoke-ScriptAnalyzer -Path . -Recurse -Settings .\PSScriptAnalyzerSettings.psd1`.
-- Tests: `bash .openclaw/tests/run-check-agents-tests.sh` covers the unattended-run monitor, which is the one component here that runs with nobody reading its output. It stubs `jq`, `gh`, and `tmux`, so it needs only bash and Node. Nothing else in the repo has an automated test; the dotfiles are verified by using them.
+- Tests: `bash .openclaw/tests/run-check-agents-tests.sh` covers the unattended-run monitor, which is the one component here that runs with nobody reading its output.
+  It stubs `jq`, `gh`, and `tmux`, so it needs only bash and Node.
+  `bash .openclaw/tests/run-openclaw-runs-tests.sh` covers the run-history summary script's math (median/p90 duration, attempt distribution, blocking-check detection); it needs `pwsh`.
+  Nothing else in the repo has an automated test; the dotfiles are verified by using them.
   WezTerm config changes are verified by reloading WezTerm by hand, because `wezterm.exe` is flagged RUNASADMIN and cannot be driven from a normal shell.
 - Typecheck is not applicable here (Lua and PowerShell have no standalone type checker), and dependency audit is not applicable (no package manifests); do not re-litigate these gaps.
 - Secrets scanning uses `gitleaks`, and lint needs `stylua` plus the `PSScriptAnalyzer` module; all three are installed by `bootstrap/workspace-windows.ps1`.

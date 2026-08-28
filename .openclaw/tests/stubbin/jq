@@ -7,18 +7,32 @@ const fs = require("fs");
 
 const argv = process.argv.slice(2);
 let raw = false;
+let nullInput = false;
 const args = {};
 while (argv.length && argv[0].startsWith("-")) {
-  const a = argv.shift();
+  let a = argv.shift();
+  // Real jq allows bundling single-letter flags (`-nc` == `-n -c`); expand
+  // that here rather than special-casing every combination check-agents.sh
+  // might use.
+  if (/^-[a-z]{2,}$/.test(a)) {
+    argv.unshift(...a.slice(2).split("").map((c) => "-" + c));
+    a = a.slice(0, 2);
+  }
   if (a === "-r") raw = true;
+  else if (a === "-c") { /* stub always emits compact JSON */ }
+  else if (a === "-n") nullInput = true;
   else if (a === "--argjson") args[argv.shift()] = JSON.parse(argv.shift());
   else if (a === "--arg") args[argv.shift()] = argv.shift();
   else { console.error("stub jq: unsupported flag " + a); process.exit(2); }
 }
 
 const filter = argv.shift();
-const src = argv.length ? fs.readFileSync(argv[0], "utf8") : fs.readFileSync(0, "utf8");
-const data = JSON.parse(src);
+// `-n` (null input, used with `$ARGS.named` to build a record from --arg /
+// --argjson alone) has nothing to read - not even stdin, which would just
+// hang waiting for a pipe that check-agents.sh never opens.
+const data = nullInput
+  ? null
+  : JSON.parse(argv.length ? fs.readFileSync(argv[0], "utf8") : fs.readFileSync(0, "utf8"));
 
 const emit = (v) =>
   process.stdout.write((raw && typeof v === "string" ? v : JSON.stringify(v)) + "\n");
@@ -46,7 +60,11 @@ function applyAssignment(expr) {
   obj[path[path.length - 1]] = value;
 }
 
-if (filter === "[.checks[]] | all") {
+if (filter === "$ARGS.named") {
+  // Real jq's builtin for collecting every --arg/--argjson into one object -
+  // used with -n to build the run-history record from scratch.
+  emit(args);
+} else if (filter === "[.checks[]] | all") {
   emit(Object.values(data.checks).every(Boolean));
 } else if (filter === ".attempts += 1") {
   data.attempts += 1;
@@ -62,13 +80,14 @@ if (filter === "[.checks[]] | all") {
   }
 } else if (/^\.[A-Za-z]+$/.test(filter)) {
   emit(data[filter.slice(1)]);
-} else if (/^\.[A-Za-z]+\s*\/\/\s*(empty|0)$/.test(filter)) {
+} else if (/^\.[A-Za-z]+\s*\/\/\s*(.+)$/.test(filter)) {
   // `.field // default` - the alternative operator. `empty` emits nothing at
   // all, which is what lets check-agents.sh detect a foreign state file.
-  const [path, fallback] = filter.split("//").map((s) => s.trim());
-  const v = data[path.slice(1)];
+  // The fallback may be any JSON literal, e.g. `.checks // {}`.
+  const m = filter.match(/^\.([A-Za-z]+)\s*\/\/\s*(.+)$/);
+  const v = data[m[1]];
   if (v !== undefined && v !== null && v !== false) emit(v);
-  else if (fallback !== "empty") emit(JSON.parse(fallback));
+  else if (m[2].trim() !== "empty") emit(JSON.parse(m[2].trim()));
 } else {
   console.error("stub jq: unsupported filter " + filter);
   process.exit(2);

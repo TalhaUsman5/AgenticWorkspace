@@ -28,6 +28,11 @@ jobs:
       - name: run check-agents regression tests
         run: bash .openclaw/tests/run-check-agents-tests.sh
 
+      # pwsh ships preinstalled on the ubuntu-latest runner image.
+      - name: run openclaw-runs regression tests
+        shell: bash
+        run: bash .openclaw/tests/run-openclaw-runs-tests.sh
+
   lint:
     name: lint
     runs-on: ubuntu-latest
@@ -68,4 +73,5 @@ jobs:
         run: |
           set -euo pipefail
           shellcheck --version
-          shellcheck .openclaw/check-agents.sh .openclaw/tests/run-check-agents-tests.sh
+          shellcheck .openclaw/check-agents.sh .openclaw/tests/run-check-agents-tests.sh \
+            .openclaw/tests/run-openclaw-runs-tests.sh

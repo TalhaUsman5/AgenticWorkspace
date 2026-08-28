@@ -5,6 +5,7 @@
 set -euo pipefail
 
 STATE_DIR="$HOME/.openclaw/state"
+HISTORY_FILE="$HOME/.openclaw/run-history.jsonl"
 MAX_ATTEMPTS=3
 NOTIFY_TIMEOUT="${NOTIFY_TIMEOUT:-15}"
 
@@ -62,6 +63,68 @@ Last tmux output:
 $last_pane"
   fi
   notify_gateway "$body" || true
+}
+
+# Appends one row to the durable run-history log, called exactly once per run
+# in the same tick that writes a terminal status - the worktree and state
+# file are both disposable, so this is the only record that survives
+# `git worktree remove` and state-file cleanup. The row is built by a single
+# `jq -n` call and written with one `printf ... >>`: POSIX guarantees a
+# write() under PIPE_BUF (4096 bytes on Linux) to an O_APPEND fd is atomic,
+# so two runs finishing in the same sweep - or a sweep racing another process
+# appending to this file - can never interleave into one corrupted line.
+# Only task ids, timings, and booleans go in; never pane output or PR bodies.
+record_history() {
+  local task_id="$1" state_file="$2" status="$3" head_branch="$4" pr_number="$5" repo_url="$6"
+  mkdir -p "$(dirname "$HISTORY_FILE")"
+
+  local project attempts started_at checks_json
+  project=$(jq -r '.project // empty' "$state_file" 2>/dev/null || echo "")
+  attempts=$(jq -r '.attempts // 0' "$state_file" 2>/dev/null || echo 0)
+  started_at=$(jq -r '.startedAt // empty' "$state_file" 2>/dev/null || echo "")
+  checks_json=$(jq -c '.checks // {}' "$state_file" 2>/dev/null || echo "{}")
+
+  local ended_at duration_json
+  ended_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  duration_json="null"
+  if [ -n "$started_at" ]; then
+    local start_epoch end_epoch
+    start_epoch=$(date -u -d "$started_at" +%s 2>/dev/null || echo "")
+    end_epoch=$(date -u -d "$ended_at" +%s 2>/dev/null || echo "")
+    if [ -n "$start_epoch" ] && [ -n "$end_epoch" ]; then
+      duration_json=$((end_epoch - start_epoch))
+    fi
+  fi
+
+  # mergedAt is only worth a lookup when there is a PR to look up - the
+  # worktree-gone failure path calls this with no PR number at all.
+  local pr_number_json="null" merged_json="null"
+  if [ -n "$pr_number" ]; then
+    pr_number_json="$pr_number"
+    local pr_state
+    pr_state=$(gh pr view "$pr_number" --repo "$repo_url" --json state --jq '.state' 2>/dev/null || echo "")
+    case "$pr_state" in
+      MERGED) merged_json="true" ;;
+      OPEN|CLOSED) merged_json="false" ;;
+      *) merged_json="null" ;;
+    esac
+  fi
+
+  local record
+  record=$(jq -n -c \
+    --arg taskId "$task_id" \
+    --arg project "$project" \
+    --arg branch "${head_branch:-}" \
+    --arg status "$status" \
+    --arg startedAt "$started_at" \
+    --arg endedAt "$ended_at" \
+    --argjson durationSeconds "$duration_json" \
+    --argjson attempts "$attempts" \
+    --argjson checks "$checks_json" \
+    --argjson prNumber "$pr_number_json" \
+    --argjson merged "$merged_json" \
+    '$ARGS.named')
+  printf '%s\n' "$record" >> "$HISTORY_FILE"
 }
 
 for state_file in "$STATE_DIR"/*.json; do
@@ -124,6 +187,7 @@ for state_file in "$STATE_DIR"/*.json; do
     notify_failed "$task_id" "$attempts" "$state_file" "worktree $worktree is gone"
     tmp=$(mktemp)
     jq '.status = "failed"' "$state_file" > "$tmp" && mv "$tmp" "$state_file"
+    record_history "$task_id" "$state_file" "failed" "" "" ""
     echo "[$task_id] worktree $worktree is gone - needs a human"
     continue
   fi
@@ -167,6 +231,7 @@ for state_file in "$STATE_DIR"/*.json; do
     notify_gateway "OpenClaw run $task_id is done. PR #$pr_number is ready for review." || true
     tmp=$(mktemp)
     jq '.status = "done"' "$state_file" > "$tmp" && mv "$tmp" "$state_file"
+    record_history "$task_id" "$state_file" "done" "$head_branch" "$pr_number" "$repo_url"
     echo "[$task_id] all checks green - PR #$pr_number ready for review"
     continue
   fi
@@ -176,6 +241,7 @@ for state_file in "$STATE_DIR"/*.json; do
       notify_failed "$task_id" "$attempts" "$state_file" ""
       tmp=$(mktemp)
       jq '.status = "failed" | .reported = true' "$state_file" > "$tmp" && mv "$tmp" "$state_file"
+      record_history "$task_id" "$state_file" "failed" "$head_branch" "$pr_number" "$repo_url"
       echo "[$task_id] failed after $MAX_ATTEMPTS attempts - needs a human"
     else
       echo "[$task_id] session died, restarting (attempt $((attempts + 1)))"

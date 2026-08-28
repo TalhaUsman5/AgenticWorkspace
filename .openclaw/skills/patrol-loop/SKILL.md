@@ -51,6 +51,7 @@ the backlog on <project>").
      "session": "aw-<task-id>",
      "project": "/abs/path/to/<project>",
      "worktree": "/abs/path/to/<project>-<task-id>",
+     "startedAt": "<ISO 8601 UTC timestamp, e.g. `date -u +%Y-%m-%dT%H:%M:%SZ`>",
      "attempts": 0,
      "checks": {
        "prCreated": false,
@@ -60,6 +61,9 @@ the backlog on <project>").
      }
    }
    ```
+   `startedAt` is what lets `check-agents.sh` compute a run's wall-clock
+   duration for the run-history record (see below); a run started without it
+   still gets recorded, just with a null duration.
    Note that the worktree's branch is not the branch the PR ends up on.
    `/next` cuts its own `<type>/issue-<n>-<slug>` branch inside the worktree
    and works there, so `agent/<task-id>` is only the starting point.
@@ -85,6 +89,12 @@ a later sweep.
 Notification failure (missing `openclaw`, unreachable gateway, a hang) never
 breaks the sweep or leaves the state file inconsistent - it is best-effort on
 top of state that is already correct.
+
+In that same tick, `check-agents.sh` also appends one row to
+`~/.openclaw/run-history.jsonl` - a durable log that survives the state file
+being deleted and the worktree being removed.
+See `docs/openclaw-migration.md`'s "Run history" section for the row shape
+and `scripts/openclaw-runs.ps1` for summarising it.
 
 ## Division of labour over the checks
 

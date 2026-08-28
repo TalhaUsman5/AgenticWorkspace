@@ -49,12 +49,34 @@ make_worktree() {
   fi
 }
 
-# task_id status attempts prCreated ciPassed reviewPassed shotsIncluded worktree
+# task_id status attempts prCreated ciPassed reviewPassed shotsIncluded worktree [startedAt]
 write_state() {
+  local started="${9:-}"
   cat > "$STATE/$1.json" <<EOF
 {"status":"$2","session":"aw-$1","project":"p","worktree":"$8","attempts":$3,
- "checks":{"prCreated":$4,"ciPassed":$5,"claudeReviewPassed":$6,"uiScreenshotsIncluded":$7}}
+ "checks":{"prCreated":$4,"ciPassed":$5,"claudeReviewPassed":$6,"uiScreenshotsIncluded":$7}${started:+,\"startedAt\":\"$started\"}}
 EOF
+}
+
+HISTORY="$HOME/.openclaw/run-history.jsonl"
+
+# Reads field $2 out of history line number $1 (1-indexed). Goes through
+# Node rather than the jq stub - the stub only understands the handful of
+# filters check-agents.sh itself uses, not arbitrary field lookups a test
+# might want.
+history_field() {
+  node -e '
+    const fs = require("fs");
+    const lines = fs.readFileSync(process.argv[1], "utf8").trim().split("\n");
+    const row = JSON.parse(lines[Number(process.argv[2]) - 1]);
+    const v = row[process.argv[3]];
+    console.log(v === undefined ? "" : JSON.stringify(v));
+  ' "$HISTORY" "$1" "$2"
+}
+
+history_line_count() {
+  [ -f "$HISTORY" ] || { echo 0; return; }
+  grep -c . "$HISTORY" 2>/dev/null || echo 0
 }
 
 # Read one top-level field back out. Goes through the jq stub rather than a
@@ -314,6 +336,111 @@ ELAPSED=$(( $(date +%s) - START ))
 is "status still reaches done past a hung notifier" "$(field "$STATE/t1.json" status)" "done"
 if [ "$ELAPSED" -lt 30 ]; then ok "hung notifier was cut off well under its 300s sleep (${ELAPSED}s)"; \
 else bad "hung notifier was cut off well under its 300s sleep" "<30s" "${ELAPSED}s"; fi
+
+# --- a run reaching done records a run-history row ---------------------------------
+echo
+echo "a run reaching done appends a run-history row"
+reset_state
+write_state t1 running 0 false false true true "$WT" "2026-01-01T00:00:00Z"
+TMUX_ALIVE=1 GH_PR_NUMBER=42 GH_CI_STATE=true GH_PR_STATE=OPEN bash "$SCRIPT" >/dev/null 2>&1
+is "one row written" "$(history_line_count)" "1"
+is "row records the task id" "$(history_field 1 taskId)" '"t1"'
+is "row records the terminal status" "$(history_field 1 status)" '"done"'
+is "row records the attempt count" "$(history_field 1 attempts)" "0"
+is "row records the PR number" "$(history_field 1 prNumber)" "42"
+is "row records merged=false for an open PR" "$(history_field 1 merged)" "false"
+is "row records the four DoD checks" "$(history_field 1 checks)" \
+   '{"prCreated":true,"ciPassed":true,"claudeReviewPassed":true,"uiScreenshotsIncluded":true}'
+is "row records a non-negative duration from startedAt" \
+   "$(node -e "console.log(JSON.parse(require('fs').readFileSync(process.argv[1],'utf8').trim().split('\n')[0]).durationSeconds >= 0)" "$HISTORY")" \
+   "true"
+
+# --- a run failing at the attempt cap records a run-history row ---------------------
+echo
+echo "a run failing at the attempt cap appends a run-history row"
+reset_state
+write_state t1 running 3 false false false false "$WT"
+TMUX_ALIVE=0 bash "$SCRIPT" >/dev/null 2>&1
+is "one row written" "$(history_line_count)" "1"
+is "row records the failed status" "$(history_field 1 status)" '"failed"'
+is "row records a null duration when startedAt was never set" \
+   "$(history_field 1 durationSeconds)" "null"
+is "row records no PR when none exists" "$(history_field 1 prNumber)" "null"
+
+# --- a vanished worktree still records a run-history row -----------------------------
+echo
+echo "a vanished worktree appends a run-history row too"
+reset_state
+write_state t1 running 0 false false false false "$WORK/gone"
+TMUX_ALIVE=0 bash "$SCRIPT" >/dev/null 2>&1
+is "one row written" "$(history_line_count)" "1"
+is "row records the failed status" "$(history_field 1 status)" '"failed"'
+is "row records no branch for a worktree that never resolved one" \
+   "$(history_field 1 branch)" '""'
+
+# --- a non-terminal tick never writes to run-history ----------------------------------
+echo
+echo "a run still in progress does not appear in run-history"
+reset_state
+write_state t1 running 1 false false false false "$WT"
+TMUX_ALIVE=0 bash "$SCRIPT" >/dev/null 2>&1
+is "status still running" "$(field "$STATE/t1.json" status)" "running"
+is "no row written for a non-terminal tick" "$(history_line_count)" "0"
+
+# --- a run already terminal is never re-recorded on a later sweep ---------------------
+echo
+echo "a run already marked done is not re-recorded on the next sweep"
+reset_state
+write_state t1 "done" 0 true true true true "$WT"
+TMUX_ALIVE=1 GH_PR_NUMBER=42 GH_CI_STATE=true bash "$SCRIPT" >/dev/null 2>&1
+is "no row written for an already-terminal run" "$(history_line_count)" "0"
+
+# --- two runs finishing in the same sweep both land intact, atomic rows --------------
+# Guards the acceptance criterion that appending is atomic: two runs reaching a
+# terminal state inside one sweep must not interleave into a corrupted line.
+echo
+echo "two runs finishing in the same sweep both get their own intact row"
+reset_state
+write_state t1 running 0 false false true true "$WT"
+write_state t2 running 0 false false true true "$WT"
+TMUX_ALIVE=1 GH_PR_NUMBER=7 GH_CI_STATE=true bash "$SCRIPT" >/dev/null 2>&1
+is "both rows written" "$(history_line_count)" "2"
+is "every row is valid JSON" \
+   "$(node -e "
+     const lines = require('fs').readFileSync(process.argv[1],'utf8').trim().split('\n');
+     console.log(lines.every(l => { try { JSON.parse(l); return true; } catch { return false; } }));
+   " "$HISTORY")" \
+   "true"
+is "task ids are distinct across the two rows" \
+   "$(history_field 1 taskId)$(history_field 2 taskId)" \
+   '"t1""t2"'
+
+# --- run-history never carries pane output or PR bodies -------------------------------
+echo
+echo "run-history carries no pane output, only ids/timings/booleans"
+reset_state
+write_state t1 running 3 false false false false "$WT"
+TMUX_ALIVE=1 TMUX_PANE_OUTPUT="agent trace: secret-looking output" bash "$SCRIPT" >/dev/null 2>&1
+TMUX_ALIVE=0 bash "$SCRIPT" >/dev/null 2>&1
+is "no pane output leaked into run-history" \
+   "$(grep -c 'secret-looking output' "$HISTORY" 2>/dev/null || true)" "0"
+
+# --- run-history lives outside both the state dir and the worktree -------------------
+# The whole point of a durable record is surviving `git worktree remove` and the
+# state file being deleted - so its path must not sit inside either.
+echo
+echo "run-history is stored outside the state dir and the worktree"
+reset_state
+write_state t1 running 0 false false true true "$WT"
+TMUX_ALIVE=1 GH_PR_NUMBER=1 GH_CI_STATE=true bash "$SCRIPT" >/dev/null 2>&1
+case "$HISTORY" in
+  "$STATE"/*) bad "history file is outside the state dir" "not under $STATE" "$HISTORY" ;;
+  *) ok "history file is outside the state dir" ;;
+esac
+case "$HISTORY" in
+  "$WT"/*) bad "history file is outside the worktree" "not under $WT" "$HISTORY" ;;
+  *) ok "history file is outside the worktree" ;;
+esac
 
 echo
 echo "passed $PASS, failed $FAIL"

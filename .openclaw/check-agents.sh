@@ -8,6 +8,7 @@ STATE_DIR="$HOME/.openclaw/state"
 HISTORY_FILE="$HOME/.openclaw/run-history.jsonl"
 MAX_ATTEMPTS=3
 NOTIFY_TIMEOUT="${NOTIFY_TIMEOUT:-15}"
+LIVENESS_TIMEOUT="${LIVENESS_TIMEOUT:-5}"
 
 command -v jq >/dev/null 2>&1 || { echo "jq is required" >&2; exit 1; }
 command -v gh >/dev/null 2>&1 || { echo "gh is required" >&2; exit 1; }
@@ -160,6 +161,38 @@ for state_file in "$STATE_DIR"/*.json; do
     session_alive=true
   fi
 
+  # `has-session` only proves the tmux session survives, not that the agent
+  # inside it is still working. When `claude` exits - crash, session limit,
+  # OOM - the session drops back to a shell prompt and sits there forever;
+  # has-session alone would report that as healthy indefinitely.
+  # `pane_current_command` is a process attribute tmux tracks for the pane's
+  # foreground job, not rendered screen content, so this stays clear of
+  # scraping pane text for a prompt or error string (locale-dependent and
+  # brittle). It reads "claude" while the agent runs and falls back to the
+  # login shell's name (bash, zsh, sh) the moment that process exits.
+  #
+  # No session at all keeps behaving as it always has: dead. A session that
+  # exists defaults to alive rather than dead, and only flips to dead once
+  # `list-panes` positively names something other than "claude" as the
+  # foreground command. That default matters when the check itself is
+  # inconclusive - `list-panes` fails outright, or hangs and the timeout below
+  # cuts it off - because the alternative (defaulting to dead on an
+  # inconclusive read) would kill and restart a session purely because tmux
+  # itself hiccuped, destroying an agent that was genuinely still working.
+  # False positives here are the outcome the issue this fixes calls out as
+  # the dangerous half; a false negative just costs one more sweep interval
+  # before the next tick catches a genuinely dead agent.
+  agent_alive=false
+  if [ "$session_alive" = "true" ]; then
+    agent_alive=true
+    if pane_cmd=$(with_timeout "$LIVENESS_TIMEOUT" tmux list-panes -t "$session" -F '#{pane_current_command}' 2>/dev/null); then
+      pane_cmd=$(printf '%s\n' "$pane_cmd" | head -n1)
+      if [ -n "$pane_cmd" ] && [ "$pane_cmd" != "claude" ]; then
+        agent_alive=false
+      fi
+    fi
+  fi
+
   # Cache the pane's tail while the session is still alive. Once tmux tears
   # a session down (the normal way a run "dies" here), capture-pane has
   # nothing left to read - so the only way a failure notification can carry
@@ -236,15 +269,30 @@ for state_file in "$STATE_DIR"/*.json; do
     continue
   fi
 
-  if [ "$session_alive" = "false" ]; then
+  if [ "$agent_alive" = "false" ]; then
     if [ "$attempts" -ge "$MAX_ATTEMPTS" ]; then
       notify_failed "$task_id" "$attempts" "$state_file" ""
       tmp=$(mktemp)
       jq '.status = "failed" | .reported = true' "$state_file" > "$tmp" && mv "$tmp" "$state_file"
       record_history "$task_id" "$state_file" "failed" "$head_branch" "$pr_number" "$repo_url"
       echo "[$task_id] failed after $MAX_ATTEMPTS attempts - needs a human"
+      # Terminal states are skipped on every future sweep (see the continue
+      # above), so a stale session left running here - agent gone, shell
+      # prompt still up - would never get cleaned up again. Tear it down now
+      # rather than leaving a zombie behind.
+      if [ "$session_alive" = "true" ]; then
+        tmux kill-session -t "$session" 2>/dev/null || true
+      fi
     else
-      echo "[$task_id] session died, restarting (attempt $((attempts + 1)))"
+      if [ "$session_alive" = "true" ]; then
+        echo "[$task_id] agent process gone but session survived, restarting (attempt $((attempts + 1)))"
+        # A stale session sitting at a shell prompt still holds the name, so
+        # has-session would otherwise refuse `new-session` with "duplicate
+        # session". Tear it down first; the agent inside it is already gone.
+        tmux kill-session -t "$session" 2>/dev/null || true
+      else
+        echo "[$task_id] session died, restarting (attempt $((attempts + 1)))"
+      fi
       tmux new-session -d -s "$session" -c "$worktree"
       # OPENCLAW_TASK_ID goes on the command line, not through `tmux setenv`:
       # setenv only reaches panes created afterwards, so a shell that already
